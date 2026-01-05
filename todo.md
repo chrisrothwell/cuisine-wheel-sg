@@ -26,3 +26,9 @@
 - [x] Implement optimistic updates for better UX
 - [x] Write vitest tests for critical features
 - [x] Test all features end-to-end
+
+## New Features (In Progress)
+- [x] Google Maps search fallback when no restaurants in database
+- [x] Add restaurant from Google Maps link (parse and import)
+- [x] Extract restaurant details from Google Maps (name, address, coordinates)
+- [x] Validation and error handling for Google Maps imports

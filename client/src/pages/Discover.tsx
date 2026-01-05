@@ -8,14 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, MapPin, Star, Check, X } from "lucide-react";
+import { Loader2, MapPin, Star, Check, X, Plus } from "lucide-react";
 import { toast } from "sonner";
+import GoogleMapsImport from "@/components/GoogleMapsImport";
 
 export default function Discover() {
   const { isAuthenticated } = useAuth();
   const [selectedCountryId, setSelectedCountryId] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<number | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const { data: countries } = trpc.countries.list.useQuery();
   const { data: allRestaurants, isLoading } = trpc.restaurants.list.useQuery();
@@ -77,6 +79,16 @@ export default function Discover() {
               ))}
             </SelectContent>
           </Select>
+          {isAuthenticated && (
+            <Button
+              onClick={() => setImportDialogOpen(true)}
+              variant="outline"
+              className="gap-2 neon-border-cyan"
+            >
+              <Plus className="w-4 h-4" />
+              Add from Maps
+            </Button>
+          )}
         </div>
 
         {/* Restaurant grid */}
@@ -107,6 +119,13 @@ export default function Discover() {
           onClose={() => setSelectedRestaurantId(null)}
         />
       )}
+
+      {/* Google Maps import dialog */}
+      <GoogleMapsImport
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        countryId={selectedCountryId !== "all" ? Number(selectedCountryId) : undefined}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, countries, restaurants, visits, reviews, groups, groupMembers, InsertCountry, InsertRestaurant, InsertVisit, InsertReview, InsertGroup, InsertGroupMember } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -86,6 +86,7 @@ export async function getUserByOpenId(openId: string) {
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -107,8 +108,7 @@ export async function getCountryById(id: number) {
 export async function createCountry(country: InsertCountry) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(countries).values(country);
-  return result;
+  return await db.insert(countries).values(country);
 }
 
 // ===== RESTAURANT OPERATIONS =====
@@ -116,21 +116,31 @@ export async function createCountry(country: InsertCountry) {
 export async function getAllRestaurants() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(restaurants).where(eq(restaurants.isActive, true)).orderBy(restaurants.name);
+  return await db.select().from(restaurants);
 }
 
 export async function getRestaurantsByCountry(countryId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(restaurants)
-    .where(and(eq(restaurants.countryId, countryId), eq(restaurants.isActive, true)))
-    .orderBy(restaurants.name);
+  return await db.select().from(restaurants).where(eq(restaurants.countryId, countryId));
 }
 
 export async function getRestaurantById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getRestaurantByName(name: string, countryId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(restaurants).where(
+    and(
+      eq(restaurants.name, name),
+      eq(restaurants.countryId, countryId)
+    )
+  ).limit(1);
   return result[0];
 }
 
@@ -144,12 +154,9 @@ export async function createRestaurant(restaurant: InsertRestaurant) {
 export async function searchRestaurants(query: string) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(restaurants)
-    .where(and(
-      eq(restaurants.isActive, true),
-      sql`${restaurants.name} LIKE ${`%${query}%`}`
-    ))
-    .limit(20);
+  return await db.select().from(restaurants).where(
+    like(restaurants.name, `%${query}%`)
+  ).limit(20);
 }
 
 // ===== VISIT OPERATIONS =====
@@ -157,39 +164,46 @@ export async function searchRestaurants(query: string) {
 export async function getUserVisits(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(visits)
-    .where(eq(visits.userId, userId))
-    .orderBy(desc(visits.visitedAt));
+  return await db.select().from(visits).where(eq(visits.userId, userId));
 }
 
 export async function getRestaurantVisits(restaurantId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(visits)
-    .where(eq(visits.restaurantId, restaurantId))
-    .orderBy(desc(visits.visitedAt));
+  return await db.select().from(visits).where(eq(visits.restaurantId, restaurantId));
 }
 
 export async function checkUserVisit(userId: number, restaurantId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(visits)
-    .where(and(eq(visits.userId, userId), eq(visits.restaurantId, restaurantId)))
-    .limit(1);
+  const result = await db.select().from(visits).where(
+    and(
+      eq(visits.userId, userId),
+      eq(visits.restaurantId, restaurantId)
+    )
+  ).limit(1);
   return result[0];
 }
 
-export async function createVisit(visit: InsertVisit) {
+export async function markVisited(userId: number, restaurantId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(visits).values(visit);
-  return result;
+  return await db.insert(visits).values({
+    userId,
+    restaurantId,
+    visitedAt: new Date(),
+  });
 }
 
 export async function deleteVisit(userId: number, restaurantId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(visits).where(and(eq(visits.userId, userId), eq(visits.restaurantId, restaurantId)));
+  return await db.delete(visits).where(
+    and(
+      eq(visits.userId, userId),
+      eq(visits.restaurantId, restaurantId)
+    )
+  );
 }
 
 // ===== REVIEW OPERATIONS =====
@@ -199,49 +213,59 @@ export async function getRestaurantReviews(restaurantId: number) {
   if (!db) return [];
   return await db.select({
     review: reviews,
-    user: users
-  })
-    .from(reviews)
+    user: users,
+  }).from(reviews)
     .leftJoin(users, eq(reviews.userId, users.id))
-    .where(and(eq(reviews.restaurantId, restaurantId), eq(reviews.isPublic, true)))
-    .orderBy(desc(reviews.createdAt));
+    .where(eq(reviews.restaurantId, restaurantId))
+    .orderBy(reviews.createdAt);
 }
 
 export async function getUserReview(userId: number, restaurantId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(reviews)
-    .where(and(eq(reviews.userId, userId), eq(reviews.restaurantId, restaurantId)))
-    .limit(1);
+  const result = await db.select().from(reviews).where(
+    and(
+      eq(reviews.userId, userId),
+      eq(reviews.restaurantId, restaurantId)
+    )
+  ).limit(1);
   return result[0];
 }
 
 export async function createReview(review: InsertReview) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(reviews).values(review);
-  return result;
+  return await db.insert(reviews).values(review);
 }
 
 export async function updateReview(userId: number, restaurantId: number, data: Partial<InsertReview>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(reviews)
-    .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(reviews.userId, userId), eq(reviews.restaurantId, restaurantId)));
+  return await db.update(reviews).set(data).where(
+    and(
+      eq(reviews.userId, userId),
+      eq(reviews.restaurantId, restaurantId)
+    )
+  );
 }
 
 export async function getRestaurantAverageRating(restaurantId: number) {
   const db = await getDb();
   if (!db) return null;
+  
   const result = await db.select({
-    avgRating: sql<number>`AVG(${reviews.rating})`,
-    count: sql<number>`COUNT(*)`
-  })
-    .from(reviews)
-    .where(and(eq(reviews.restaurantId, restaurantId), eq(reviews.isPublic, true)))
-    .limit(1);
-  return result[0];
+    avgRating: reviews.rating,
+    count: reviews.id,
+  }).from(reviews)
+    .where(eq(reviews.restaurantId, restaurantId));
+
+  if (result.length === 0) return null;
+
+  const avgRating = result.reduce((sum, r) => sum + (r.avgRating || 0), 0) / result.length;
+  return {
+    avgRating: avgRating.toFixed(1),
+    count: result.length,
+  };
 }
 
 // ===== GROUP OPERATIONS =====
@@ -252,12 +276,18 @@ export async function getAllPublicGroups() {
   return await db.select({
     group: groups,
     creator: users,
-    memberCount: sql<number>`(SELECT COUNT(*) FROM ${groupMembers} WHERE ${groupMembers.groupId} = ${groups.id})`
-  })
-    .from(groups)
+    memberCount: groupMembers.id,
+  }).from(groups)
     .leftJoin(users, eq(groups.creatorId, users.id))
-    .where(eq(groups.isPublic, true))
-    .orderBy(desc(groups.createdAt));
+    .leftJoin(groupMembers, eq(groups.id, groupMembers.groupId))
+    .where(eq(groups.isPublic, true));
+}
+
+export async function getGroupById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(groups).where(eq(groups.id, id)).limit(1);
+  return result[0];
 }
 
 export async function getUserGroups(userId: number) {
@@ -271,15 +301,7 @@ export async function getUserGroups(userId: number) {
     .from(groupMembers)
     .leftJoin(groups, eq(groupMembers.groupId, groups.id))
     .leftJoin(users, eq(groups.creatorId, users.id))
-    .where(eq(groupMembers.userId, userId))
-    .orderBy(desc(groupMembers.joinedAt));
-}
-
-export async function getGroupById(groupId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(groups).where(eq(groups.id, groupId)).limit(1);
-  return result[0];
+    .where(eq(groupMembers.userId, userId));
 }
 
 export async function createGroup(group: InsertGroup) {
@@ -296,12 +318,10 @@ export async function getGroupMembers(groupId: number) {
   if (!db) return [];
   return await db.select({
     membership: groupMembers,
-    user: users
-  })
-    .from(groupMembers)
+    user: users,
+  }).from(groupMembers)
     .leftJoin(users, eq(groupMembers.userId, users.id))
-    .where(eq(groupMembers.groupId, groupId))
-    .orderBy(groupMembers.joinedAt);
+    .where(eq(groupMembers.groupId, groupId));
 }
 
 export async function addGroupMember(member: InsertGroupMember) {
@@ -311,28 +331,27 @@ export async function addGroupMember(member: InsertGroupMember) {
   return result;
 }
 
-export async function checkGroupMembership(userId: number, groupId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(groupMembers)
-    .where(and(eq(groupMembers.userId, userId), eq(groupMembers.groupId, groupId)))
-    .limit(1);
-  return result[0];
-}
-
 export async function getGroupVisits(groupId: number) {
   const db = await getDb();
   if (!db) return [];
   
-  // Get all visits from group members
   return await db.select({
     visit: visits,
     user: users,
-    restaurant: restaurants
-  })
-    .from(visits)
+    restaurant: restaurants,
+  }).from(visits)
     .leftJoin(users, eq(visits.userId, users.id))
     .leftJoin(restaurants, eq(visits.restaurantId, restaurants.id))
-    .where(sql`${visits.userId} IN (SELECT ${groupMembers.userId} FROM ${groupMembers} WHERE ${groupMembers.groupId} = ${groupId})`)
-    .orderBy(desc(visits.visitedAt));
+    .leftJoin(groupMembers, eq(visits.userId, groupMembers.userId))
+    .where(eq(groupMembers.groupId, groupId));
+}
+
+export async function joinGroup(groupId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.insert(groupMembers).values({
+    groupId,
+    userId,
+    role: 'member',
+  });
 }

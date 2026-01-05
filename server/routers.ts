@@ -4,8 +4,9 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
-
+import { TRPCError } from "@trpc/server";
 import { notifyOwner } from "./_core/notification";
+import { parseGoogleMapsUrl, isValidGoogleMapsUrl } from "./googleMapsHelper";
 
 export const appRouter = router({
   system: systemRouter,
@@ -71,6 +72,50 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.createRestaurant(input);
       }),
+    
+    importFromGoogleMaps: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        address: z.string(),
+        latitude: z.string(),
+        longitude: z.string(),
+        countryId: z.number(),
+        placeId: z.string().optional(),
+        phoneNumber: z.string().optional(),
+        website: z.string().optional(),
+        priceLevel: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Check if restaurant already exists
+        const existing = await db.getRestaurantByName(input.name, input.countryId);
+        if (existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Restaurant already exists in database",
+          });
+        }
+        
+        // Create new restaurant
+        const result = await db.createRestaurant({
+          name: input.name,
+          address: input.address,
+          latitude: input.latitude,
+          longitude: input.longitude,
+          countryId: input.countryId,
+          placeId: input.placeId,
+          phoneNumber: input.phoneNumber,
+          website: input.website,
+          priceLevel: input.priceLevel,
+        });
+        
+        // Notify owner about new restaurant submission
+        await notifyOwner({
+          title: "New Restaurant Submitted",
+          content: `${ctx.user.name || ctx.user.email} submitted a new restaurant: "${input.name}" at ${input.address}`
+        });
+        
+        return result;
+      }),
   }),
 
   visits: router({
@@ -90,11 +135,7 @@ export const appRouter = router({
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await db.createVisit({
-          userId: ctx.user.id,
-          restaurantId: input.restaurantId,
-          notes: input.notes,
-        });
+        return await db.markVisited(ctx.user.id, input.restaurantId);
       }),
     
     unmarkVisited: protectedProcedure
@@ -158,12 +199,12 @@ export const appRouter = router({
         restaurantId: z.number(),
         rating: z.number().min(1).max(5).optional(),
         comment: z.string().optional(),
-        isPublic: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { restaurantId, ...data } = input;
-        await db.updateReview(ctx.user.id, restaurantId, data);
-        return { success: true };
+        return await db.updateReview(ctx.user.id, input.restaurantId, {
+          rating: input.rating,
+          comment: input.comment,
+        });
       }),
   }),
 
@@ -231,16 +272,16 @@ export const appRouter = router({
       .input(z.object({ groupId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         // Check if already member
-        const existing = await db.checkGroupMembership(ctx.user.id, input.groupId);
+        const members = await db.getGroupMembers(input.groupId);
+        const existing = members.some(m => m.user?.id === ctx.user.id);
         if (existing) {
-          throw new Error("Already a member of this group");
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Already a member of this group",
+          });
         }
         
-        return await db.addGroupMember({
-          groupId: input.groupId,
-          userId: ctx.user.id,
-          role: 'member',
-        });
+        return await db.joinGroup(input.groupId, ctx.user.id);
       }),
   }),
 });
