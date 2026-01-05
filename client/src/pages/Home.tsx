@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import SpinningWheel from "@/components/SpinningWheel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, MapPin, Star, Users } from "lucide-react";
+import { Loader2, MapPin, Star, Users, ExternalLink } from "lucide-react";
 import { Country } from "../../../drizzle/schema";
 import { Link } from "wouter";
 
@@ -18,6 +18,11 @@ export default function Home() {
   const handleCountrySelected = (country: Country) => {
     setSelectedCountry(country);
     refetchRestaurants();
+  };
+
+  const generateGoogleMapsSearchUrl = (cuisineType: string) => {
+    const searchQuery = `${cuisineType} restaurants in Singapore`;
+    return `https://www.google.com/maps/search/${encodeURIComponent(searchQuery)}`;
   };
 
   if (isLoading) {
@@ -105,6 +110,20 @@ export default function Home() {
                 </p>
               </div>
             )}
+
+            {/* Google Maps search link */}
+            <div className="mt-8 pt-6 border-t border-border flex justify-center">
+              <a
+                href={generateGoogleMapsSearchUrl(selectedCountry.cuisineType)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition-colors font-semibold hover:underline"
+              >
+                <MapPin className="w-4 h-4" />
+                Search with Google Maps
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
           </div>
         </div>
       )}

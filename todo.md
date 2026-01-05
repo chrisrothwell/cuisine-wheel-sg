@@ -32,3 +32,8 @@
 - [x] Add restaurant from Google Maps link (parse and import)
 - [x] Extract restaurant details from Google Maps (name, address, coordinates)
 - [x] Validation and error handling for Google Maps imports
+
+## Google Maps Search Link (In Progress)
+- [x] Add "Search with Google Maps" link to wheel results
+- [x] Generate prefilled search query (e.g., "Indonesian restaurants in Singapore")
+- [x] Open Google Maps in new tab with search term
