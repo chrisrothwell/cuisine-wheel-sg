@@ -1,31 +1,152 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import SpinningWheel from "@/components/SpinningWheel";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { getLoginUrl } from "@/const";
-import { Streamdown } from 'streamdown';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, MapPin, Star, Users } from "lucide-react";
+import { Country } from "../../../drizzle/schema";
+import { Link } from "wouter";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
 export default function Home() {
-  // The userAuth hooks provides authentication state
-  // To implement login/logout functionality, simply call logout() or redirect to getLoginUrl()
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
+  const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const { data: countries, isLoading } = trpc.countries.list.useQuery();
+  const { data: restaurants, refetch: refetchRestaurants } = trpc.restaurants.getByCountry.useQuery(
+    { countryId: selectedCountry?.id || 0 },
+    { enabled: !!selectedCountry }
+  );
 
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+  const handleCountrySelected = (country: Country) => {
+    setSelectedCountry(country);
+    refetchRestaurants();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="container py-16 flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-12 h-12 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
+    <div className="container py-8">
+      {/* Hero section */}
+      <div className="text-center mb-12">
+        <h1 className="text-5xl md:text-6xl font-bold neon-pink mb-4">
+          Cuisine Wheel
+        </h1>
+        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          Spin the wheel to discover cuisines from around the world. Track your culinary journey across Singapore's diverse restaurant scene.
+        </p>
+      </div>
+
+      {/* Spinning wheel */}
+      <div className="mb-16">
+        <SpinningWheel
+          countries={countries || []}
+          onCountrySelected={handleCountrySelected}
+        />
+      </div>
+
+      {/* Selected country restaurants */}
+      {selectedCountry && (
+        <div className="mb-16">
+          <div className="hud-frame p-8 bg-card border border-border">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-3xl font-bold neon-cyan mb-2">
+                  {selectedCountry.flagEmoji} {selectedCountry.cuisineType} Restaurants
+                </h2>
+                <p className="text-muted-foreground">
+                  Explore {selectedCountry.cuisineType} cuisine in Singapore
+                </p>
+              </div>
+              <Link href="/discover">
+                <Button variant="outline" className="gap-2">
+                  <MapPin className="w-4 h-4" />
+                  View All
+                </Button>
+              </Link>
+            </div>
+
+            {restaurants && restaurants.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {restaurants.slice(0, 6).map((restaurant) => (
+                  <Card key={restaurant.id} className="bg-muted/20 border-border hover:border-primary transition-colors">
+                    <CardHeader>
+                      <CardTitle className="text-lg">{restaurant.name}</CardTitle>
+                      <CardDescription className="line-clamp-1">
+                        {restaurant.address}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-4 h-4" />
+                          <span>Location</span>
+                        </div>
+                        {restaurant.priceLevel && (
+                          <div className="flex items-center gap-1">
+                            <span>{"$".repeat(restaurant.priceLevel)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground mb-4">
+                  No restaurants found for this cuisine yet.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Be the first to add a {selectedCountry.cuisineType} restaurant!
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Features section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+        <Card className="bg-card/50 border-border hover:border-primary transition-colors">
+          <CardHeader>
+            <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center mb-4">
+              <MapPin className="w-6 h-6 text-primary" />
+            </div>
+            <CardTitle className="neon-pink">Discover Restaurants</CardTitle>
+            <CardDescription>
+              Explore restaurants from cuisines around the world, all located in Singapore
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        <Card className="bg-card/50 border-border hover:border-accent transition-colors">
+          <CardHeader>
+            <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center mb-4">
+              <Star className="w-6 h-6 text-accent" />
+            </div>
+            <CardTitle className="neon-cyan">Track & Review</CardTitle>
+            <CardDescription>
+              Mark restaurants as visited, rate your experiences, and share reviews with the community
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        <Card className="bg-card/50 border-border hover:border-primary transition-colors">
+          <CardHeader>
+            <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center mb-4">
+              <Users className="w-6 h-6 text-primary" />
+            </div>
+            <CardTitle className="neon-pink">Form Groups</CardTitle>
+            <CardDescription>
+              Create or join groups to collaboratively complete cuisines from all countries together
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
     </div>
   );
 }
