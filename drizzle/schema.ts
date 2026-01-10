@@ -60,7 +60,6 @@ export const restaurants = mysqlTable("restaurants", {
 
 export type Restaurant = typeof restaurants.$inferSelect;
 export type InsertRestaurant = typeof restaurants.$inferInsert;
-
 /**
  * User visits to restaurants
  */
