@@ -24,6 +24,7 @@ interface MapSelectorProps {
 export default function MapSelector({ countries, onCountrySelected, isSpinning }: MapSelectorProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const [rotationOffset, setRotationOffset] = useState(0);
   
   // State to hold the dynamically calculated coordinates of the winner
   const [winnerCoords, setWinnerCoords] = useState<[number, number] | null>(null);
@@ -52,6 +53,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
     
     let interval: NodeJS.Timeout;
     let timer: NodeJS.Timeout;
+    let rotationInterval: NodeJS.Timeout;
     
     if (isSpinning) {
       console.log('[MapSelector] Spinning started, needsReset:', needsResetRef.current);
@@ -61,10 +63,16 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       const currentCycle = spinCycleRef.current;
       console.log('[MapSelector] New spin cycle:', currentCycle);
       
+      // Start globe rotation
+      rotationInterval = setInterval(() => {
+        setRotationOffset(prev => prev + 6); // Rotate 2 degrees each frame
+      }, 16); // ~60fps
+      
       // If we've zoomed before, reset the map position immediately
       if (needsResetRef.current) {
         console.log('[MapSelector] Resetting map to initial position');
         setMapConfig(INITIAL_MAP_CONFIG);
+        setRotationOffset(0); // Reset rotation
         needsResetRef.current = false;
       }
       
@@ -82,6 +90,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       const spinDuration = 3000;
       timer = setTimeout(() => {
         clearInterval(interval);
+        clearInterval(rotationInterval); // Stop rotation
         
         const randomIndex = Math.floor(Math.random() * countries.length);
         const winner = countries[randomIndex];
@@ -97,6 +106,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
     return () => {
       if (interval) clearInterval(interval);
       if (timer) clearTimeout(timer);
+      if (rotationInterval) clearInterval(rotationInterval);
     };
   }, [isSpinning, countries]);
 
@@ -174,20 +184,11 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
 
   return (
     <div className="relative w-full h-[600px] bg-slate-950 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
-      <motion.div
-        animate={{ 
-          x: (isSpinning && !selectedCountry) ? [0, -3, 3, 0] : 0,
-        }}
-        transition={{ 
-          repeat: (isSpinning && !selectedCountry) ? Infinity : 0, 
-          duration: 0.2 
-        }}
-        className="w-full h-full"
-      >
+      <div className="w-full h-full">
         <ComposableMap
           projection="geoOrthographic"
           projectionConfig={{
-            rotate: [-mapConfig.center[0], -mapConfig.center[1], 0],
+            rotate: [-mapConfig.center[0] - rotationOffset, -mapConfig.center[1], 0],
             scale: mapConfig.scale,
           }}
           className="w-full h-full"
@@ -239,7 +240,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
             </motion.g>
           )}
         </ComposableMap>
-      </motion.div>
+      </div>
 
       {/* Flag & Result UI */}
       <AnimatePresence>
