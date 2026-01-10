@@ -8,7 +8,7 @@ import {
   Graticule
 } from "react-simple-maps";
 import { geoInterpolate, geoCentroid } from "d3-geo";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { type Country } from "../../../drizzle/schema";
 
 const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/main/world.json";
@@ -25,6 +25,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
   const [rotationOffset, setRotationOffset] = useState(0);
+  const [isZooming, setIsZooming] = useState(false);
   
   // State to hold the dynamically calculated coordinates of the winner
   const [winnerCoords, setWinnerCoords] = useState<[number, number] | null>(null);
@@ -39,6 +40,8 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   const spinCycleRef = useRef(0);
   // Ref to track if we've already zoomed and called callback for this country
   const hasZoomedForCountryRef = useRef<string | null>(null);
+  // Ref to track if we've tried the fallback flag
+  const flagFallbackTriedRef = useRef<string | null>(null);
   
   const [mapConfig, setMapConfig] = useState(INITIAL_MAP_CONFIG);
 
@@ -65,7 +68,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       
       // Start globe rotation
       rotationInterval = setInterval(() => {
-        setRotationOffset(prev => prev + 6); // Rotate 2 degrees each frame
+        setRotationOffset(prev => prev + 4); // Rotate 4 degrees each frame for faster spin
       }, 16); // ~60fps
       
       // If we've zoomed before, reset the map position immediately
@@ -81,11 +84,13 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       setWinnerCoords(null);
       calculatedCountryRef.current = null;
       hasZoomedForCountryRef.current = null; // Reset zoom tracker
+      flagFallbackTriedRef.current = null; // Reset flag fallback tracker
+      setIsZooming(false);
       
       interval = setInterval(() => {
         const newIndex = Math.floor(Math.random() * countries.length);
         setCurrentIndex(newIndex);
-      }, 80);
+      }, 40); // Faster country scanning
 
       const spinDuration = 3000;
       timer = setTimeout(() => {
@@ -116,24 +121,32 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       // Only calculate if we haven't already calculated for this country
       if (calculatedCountryRef.current?.code !== selectedCountry.code) {
         console.log('[MapSelector] Calculating coordinates for:', selectedCountry.name, 'code:', selectedCountry.code, 'cycle:', spinCycleRef.current);
-        const matchingGeo = geographiesRef.current.find(
-          (geo) => geo.id === selectedCountry.code
+        // Try alpha-3 first (most common in geography data)
+        let matchingGeo = geographiesRef.current.find(
+          (geo) => geo.id === selectedCountry.alpha3
         );
-        console.log(matchingGeo);
+        
+        // Fallback to alpha-2 if alpha-3 doesn't match
+        if (!matchingGeo) {
+          matchingGeo = geographiesRef.current.find(
+            (geo) => geo.id === selectedCountry.alpha2
+          );
+        }
+        
         if (matchingGeo) {
           const centroid = geoCentroid(matchingGeo);
-          console.log('[MapSelector] Centroid calculated:', centroid, 'for cycle:', spinCycleRef.current);
+          console.log('[MapSelector] Centroid calculated:', centroid, 'for cycle:', spinCycleRef.current, 'matched by:', matchingGeo.id);
           setWinnerCoords(centroid as [number, number]);
           calculatedCountryRef.current = selectedCountry;
         } else {
-          console.warn('[MapSelector] No matching geography found for country code:', selectedCountry.code);
-          const matchingGeo = geographiesRef.current.find(
-            (geo) => geo.id === "MYS"
+          console.warn('[MapSelector] No matching geography found for country:', selectedCountry.name, 'alpha2:', selectedCountry.alpha2, 'alpha3:', selectedCountry.alpha3);
+          // Fallback to Malaysia if country not found
+          const fallbackGeo = geographiesRef.current.find(
+            (geo) => geo.id === "MYS" || geo.id === "MY"
           );
-          console.log(matchingGeo);
-          if (matchingGeo) {
-            const centroid = geoCentroid(matchingGeo);
-            console.log('[MapSelector] Centroid calculated:', centroid);
+          if (fallbackGeo) {
+            const centroid = geoCentroid(fallbackGeo);
+            console.log('[MapSelector] Centroid calculated (fallback to Malaysia):', centroid);
             setWinnerCoords(centroid as [number, number]);
             calculatedCountryRef.current = selectedCountry;
           }
@@ -146,7 +159,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
     }
   }, [selectedCountry]);
 
-  // 3. Cinematic Zoom Handler (triggered once winnerCoords are found)
+  // 3. Animated Zoom Handler (triggered once winnerCoords are found)
   useEffect(() => {
     if (winnerCoords && selectedCountry) {
       console.log('[MapSelector] Zoom effect triggered for:', selectedCountry.name, 'coords:', winnerCoords, 'cycle:', spinCycleRef.current);
@@ -159,16 +172,52 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       
       // Only zoom if this selectedCountry was set in the current spin cycle
       if (calculatedCountryRef.current?.code === selectedCountry.code) {
-        console.log('[MapSelector] Zooming to winner coordinates:', winnerCoords, 'for country:', selectedCountry.name);
-        setMapConfig({
-          center: winnerCoords,
-          scale: 600,
-        });
-        needsResetRef.current = true;
-        hasZoomedForCountryRef.current = selectedCountry.code; // Mark as zoomed
+        console.log('[MapSelector] Starting animated zoom to:', selectedCountry.name);
+        setIsZooming(true);
+        hasZoomedForCountryRef.current = selectedCountry.code;
         
-        // Call the callback
-        onCountrySelected(selectedCountry);
+        // Animate the zoom over 2 seconds
+        const startConfig = { ...mapConfig };
+        const endConfig = { center: winnerCoords, scale: 600 };
+        const startRotation = rotationOffset;
+        
+        const duration = 2000; // 2 seconds
+        const startTime = Date.now();
+        
+        const animateZoom = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          // Easing function for smooth animation
+          const easeInOutCubic = (t: number) => 
+            t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+          
+          const easedProgress = easeInOutCubic(progress);
+          
+          // Interpolate center
+          const centerLon = startConfig.center[0] + (endConfig.center[0] - startConfig.center[0]) * easedProgress;
+          const centerLat = startConfig.center[1] + (endConfig.center[1] - startConfig.center[1]) * easedProgress;
+          
+          // Interpolate scale
+          const scale = startConfig.scale + (endConfig.scale - startConfig.scale) * easedProgress;
+          
+          // Smoothly adjust rotation to match the target
+          const targetRotation = 0; // Stop rotation when zoomed
+          const rotation = startRotation + (targetRotation - startRotation) * easedProgress;
+          
+          setMapConfig({ center: [centerLon, centerLat], scale });
+          setRotationOffset(rotation);
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateZoom);
+          } else {
+            setIsZooming(false);
+            needsResetRef.current = true;
+            onCountrySelected(selectedCountry);
+          }
+        };
+        
+        requestAnimationFrame(animateZoom);
       } else {
         console.log('[MapSelector] Skipping zoom - country from previous spin cycle');
       }
@@ -201,15 +250,24 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
               // Store geographies in ref for centroid calculation
               if (geographiesRef.current.length !== geographies.length) {
                 console.log('[MapSelector] Geographies loaded:', geographies.length, 'countries');
-                console.log(geographies);
               }
               geographiesRef.current = geographies;
               
               return geographies.map((geo) => {
                 // Determine if this is the chosen winner (show as soon as selectedCountry is set)
-                const isWinner = selectedCountry?.code === geo.id;
+                // Match by alpha-3 or alpha-2 (geo.id is typically ISO alpha-3 or alpha-2)
+                const isWinner = selectedCountry && (
+                  selectedCountry.alpha3 === geo.id || 
+                  selectedCountry.alpha2 === geo.id
+                );
+                
                 // Determine if this specific polygon is the one being "scanned" (only if no winner yet)
-                const isScanning = isSpinning && !selectedCountry && countries[currentIndex]?.code === geo.id;
+                // Match by alpha-3 or alpha-2
+                const currentCountry = countries[currentIndex];
+                const isScanning = isSpinning && !selectedCountry && currentCountry && (
+                  currentCountry.alpha3 === geo.id || 
+                  currentCountry.alpha2 === geo.id
+                );
 
                 return (
                   <Geography
@@ -227,35 +285,39 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
               });
             }}
           </Geographies>
-
-          {winnerCoords && (
-            <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <Line
-                coordinates={flightPath as any}
-                stroke="#ec4899"
-                strokeWidth={3}
-                strokeLinecap="round"
-                strokeDasharray="5,5"
-              />
-            </motion.g>
-          )}
         </ComposableMap>
       </div>
 
       {/* Flag & Result UI */}
       <AnimatePresence>
-        {selectedCountry && winnerCoords && (
+        {selectedCountry && winnerCoords && !isZooming && (
           <motion.div
             initial={{ opacity: 0, y: 50, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
-            className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4"
           >
-            <div className="text-8xl drop-shadow-[0_0_15px_rgba(236,72,153,0.5)]">
-              {selectedCountry.name}
+            {/* Flag SVG from flagcdn.com - uses ISO 3166-1 alpha-2 code (lowercase) */}
+            <div className="w-48 h-32 rounded-lg overflow-hidden shadow-2xl border-4 border-pink-500/30 drop-shadow-[0_0_30px_rgba(236,72,153,0.6)]">
+              <img
+                src={`https://flagcdn.com/${selectedCountry.alpha2.toLowerCase()}.svg`}
+                alt={`${selectedCountry.name} flag`}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Only try fallback once per country
+                  if (flagFallbackTriedRef.current !== selectedCountry.alpha2) {
+                    flagFallbackTriedRef.current = selectedCountry.alpha2;
+                    // Use flagsapi.com as fallback - uses ISO 3166-1 alpha-2 code (uppercase)
+                    e.currentTarget.src = `https://flagsapi.com/${selectedCountry.alpha2.toUpperCase()}/flat/64.png`;
+                  }
+                }}
+              />
             </div>
-            <div className="bg-slate-900/80 backdrop-blur-md px-6 py-2 rounded-full border border-pink-500/30 shadow-xl">
-              <h2 className="text-white text-2xl font-bold tracking-tight">
+            
+            {/* Country name */}
+            <div className="bg-slate-900/90 backdrop-blur-md px-8 py-3 rounded-full border border-pink-500/40 shadow-2xl">
+              <h2 className="text-white text-3xl font-bold tracking-tight">
                 {selectedCountry.name}
               </h2>
             </div>

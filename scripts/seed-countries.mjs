@@ -29,7 +29,9 @@ async function loadCountriesFromJson() {
 
   return data.map(country => ({
     name: country.name,
-    code: country["alpha-3"],
+    code: country["country-code"],
+    alpha2: country["alpha-2"],
+    alpha3: country["alpha-3"],
     description: null,
     region: country.region || null,
     subRegion: country["sub-region"] || null,
@@ -51,7 +53,14 @@ async function seed() {
         .onConflictDoUpdate({
           target: countries.code,
           set: {
-            name: country.name
+            name: country.name,
+            alpha2: country.alpha2,
+            alpha3: country.alpha3,
+            description: country.description,
+            region: country.region,
+            subRegion: country.subRegion,
+            unMember: country.unMember,
+            unMembershipStatus: country.unMembershipStatus,
           },
         });
       console.log(`✓ ${country.name}`);

@@ -26,6 +26,8 @@ export const countries = sqliteTable("countries", {
   name: text("name").notNull().unique(),
   // Ensure this is ISO2 (2 chars) to match your Map and Flag logic
   code: text("code").notNull().unique(),
+  alpha2: text("alpha2").notNull().unique(),
+  alpha3: text("alpha3").notNull().unique(),
   description: text("description"),
   region: text("region"),
   subRegion: text("sub_region"),
