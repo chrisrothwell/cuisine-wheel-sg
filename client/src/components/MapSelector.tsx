@@ -13,7 +13,7 @@ import { type Country } from "../../../drizzle/schema";
 
 const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/main/world.json";
 const SG_COORDS: [number, number] = [103.8198, 1.3521];
-const INITIAL_MAP_CONFIG = { center: [20, 0] as [number, number], scale: 140 };
+const INITIAL_MAP_CONFIG = { center: [103.8198, 1.3521] as [number, number], scale: 280 };
 
 interface MapSelectorProps {
   countries: Country[];
@@ -22,6 +22,25 @@ interface MapSelectorProps {
 }
 
 export default function MapSelector({ countries, onCountrySelected, isSpinning }: MapSelectorProps) {
+  // Helper function to validate and sanitize map config
+  const validateMapConfig = (config: { center?: [number, number] | number[]; scale?: number }): { center: [number, number]; scale: number } => {
+    const center = config.center || [103.8198, 1.3521];
+    const scale = config.scale || 280;
+    
+    // Ensure center is an array with at least 2 elements
+    const [lon, lat] = Array.isArray(center) && center.length >= 2 ? center : [103.8198, 1.3521];
+    
+    // Ensure coordinates are valid numbers (not NaN or Infinity)
+    const validLon = typeof lon === 'number' && isFinite(lon) ? lon : 103.8198;
+    const validLat = typeof lat === 'number' && isFinite(lat) ? lat : 1.3521;
+    const validScale = typeof scale === 'number' && isFinite(scale) && scale > 0 ? scale : 280;
+    
+    return {
+      center: [validLon, validLat] as [number, number],
+      scale: validScale,
+    };
+  };
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
   const [rotationOffset, setRotationOffset] = useState(0);
@@ -43,7 +62,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   // Ref to track if we've tried the fallback flag
   const flagFallbackTriedRef = useRef<string | null>(null);
   
-  const [mapConfig, setMapConfig] = useState(INITIAL_MAP_CONFIG);
+  const [mapConfig, setMapConfig] = useState(() => validateMapConfig(INITIAL_MAP_CONFIG));
 
   // Track prop changes
   useEffect(() => {
@@ -74,7 +93,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       // If we've zoomed before, reset the map position immediately
       if (needsResetRef.current) {
         console.log('[MapSelector] Resetting map to initial position');
-        setMapConfig(INITIAL_MAP_CONFIG);
+        setMapConfig(validateMapConfig(INITIAL_MAP_CONFIG));
         setRotationOffset(0); // Reset rotation
         needsResetRef.current = false;
       }
@@ -90,7 +109,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
       interval = setInterval(() => {
         const newIndex = Math.floor(Math.random() * countries.length);
         setCurrentIndex(newIndex);
-      }, 40); // Faster country scanning
+      }, 200); // Faster country scanning
 
       const spinDuration = 3000;
       timer = setTimeout(() => {
@@ -161,7 +180,18 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
 
   // 3. Animated Zoom Handler (triggered once winnerCoords are found)
   useEffect(() => {
-    if (winnerCoords && selectedCountry) {
+    // Validate winnerCoords before using
+    if (!winnerCoords || !Array.isArray(winnerCoords) || winnerCoords.length < 2) {
+      return;
+    }
+    
+    const [lon, lat] = winnerCoords;
+    if (typeof lon !== 'number' || typeof lat !== 'number' || !isFinite(lon) || !isFinite(lat)) {
+      console.warn('[MapSelector] Invalid winnerCoords:', winnerCoords);
+      return;
+    }
+    
+    if (selectedCountry) {
       console.log('[MapSelector] Zoom effect triggered for:', selectedCountry.name, 'coords:', winnerCoords, 'cycle:', spinCycleRef.current);
       
       // Only zoom once per country
@@ -177,8 +207,8 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
         hasZoomedForCountryRef.current = selectedCountry.code;
         
         // Animate the zoom over 2 seconds
-        const startConfig = { ...mapConfig };
-        const endConfig = { center: winnerCoords, scale: 600 };
+        const startConfig = validateMapConfig(mapConfig);
+        const endConfig = validateMapConfig({ center: winnerCoords, scale: 600 });
         const startRotation = rotationOffset;
         
         const duration = 2000; // 2 seconds
@@ -194,18 +224,20 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
           
           const easedProgress = easeInOutCubic(progress);
           
-          // Interpolate center
+          // Interpolate center with validation
           const centerLon = startConfig.center[0] + (endConfig.center[0] - startConfig.center[0]) * easedProgress;
           const centerLat = startConfig.center[1] + (endConfig.center[1] - startConfig.center[1]) * easedProgress;
           
           // Interpolate scale
           const scale = startConfig.scale + (endConfig.scale - startConfig.scale) * easedProgress;
           
+          // Validate and set the new config
+          const newConfig = validateMapConfig({ center: [centerLon, centerLat] as [number, number], scale });
+          setMapConfig(newConfig);
+          
           // Smoothly adjust rotation to match the target
           const targetRotation = 0; // Stop rotation when zoomed
           const rotation = startRotation + (targetRotation - startRotation) * easedProgress;
-          
-          setMapConfig({ center: [centerLon, centerLat], scale });
           setRotationOffset(rotation);
           
           if (progress < 1) {
@@ -237,8 +269,12 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
         <ComposableMap
           projection="geoOrthographic"
           projectionConfig={{
-            rotate: [-mapConfig.center[0] - rotationOffset, -mapConfig.center[1], 0],
-            scale: mapConfig.scale,
+            rotate: [
+              -(mapConfig.center?.[0] ?? 20) - rotationOffset, 
+              -(mapConfig.center?.[1] ?? 0), 
+              0
+            ],
+            scale: mapConfig.scale ?? 140,
           }}
           className="w-full h-full"
         >

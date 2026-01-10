@@ -47,10 +47,10 @@ export default function Home() {
       {/* Hero section */}
       <div className="text-center mb-12">
         <h1 className="text-5xl md:text-6xl font-bold neon-pink mb-4">
-          Cuisine Wheel
+          Eat the World in Singapore
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Spin the wheel to discover cuisines from around the world. Track your culinary journey across Singapore's diverse restaurant scene.
+          Discover cuisines from around the world. Track your culinary journey across Singapore's diverse restaurant scene.
         </p>
       </div>
 
@@ -63,7 +63,7 @@ export default function Home() {
               size="lg"
               className="gap-2"
             >
-              Spin the Grid
+              Find a Country!
             </Button>
           )}
           <MapSelector
