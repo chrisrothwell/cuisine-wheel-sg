@@ -46,7 +46,7 @@ export default function CyberpunkLayout({ children }: CyberpunkLayoutProps) {
                   <Sparkles className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold neon-pink tracking-wider">CUISINE WHEEL</h1>
+                  <h1 className="text-xl font-bold neon-pink tracking-wider">EAT THE WORLD</h1>
                   <p className="text-xs text-muted-foreground uppercase tracking-widest">Singapore</p>
                 </div>
               </div>
