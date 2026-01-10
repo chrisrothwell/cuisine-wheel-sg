@@ -24,8 +24,9 @@ export default function Home() {
   };
 
   const handleSpin = () => {
-    setIsSpinning(true);
+    console.log('[Home] handleSpin called');
     setSelectedCountry(null);
+    setTimeout(() => setIsSpinning(true), 0); // Force it to happen after state update
   };
 
   const generateGoogleMapsSearchUrl = (cuisineType: string) => {

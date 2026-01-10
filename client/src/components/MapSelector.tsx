@@ -32,46 +32,68 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   const geographiesRef = useRef<any[]>([]);
   // Ref to track which country we've calculated coordinates for
   const calculatedCountryRef = useRef<Country | null>(null);
+  // Ref to track if we need to reset on next spin
+  const needsResetRef = useRef(false);
+  // Ref to track the current spin cycle - prevents old coords from triggering zoom
+  const spinCycleRef = useRef(0);
+  // Ref to track if we've already zoomed and called callback for this country
+  const hasZoomedForCountryRef = useRef<string | null>(null);
   
   const [mapConfig, setMapConfig] = useState(INITIAL_MAP_CONFIG);
 
   // Track prop changes
   useEffect(() => {
-    console.log('[MapSelector] Props updated - isSpinning:', isSpinning, 'countries count:', countries.length);
-  }, [isSpinning, countries.length]);
+    console.log('[MapSelector] Props updated - isSpinning:', isSpinning, 'countries count:', countries.length, 'selectedCountry:', selectedCountry?.name);
+  }, [isSpinning, countries.length, selectedCountry]);
 
-  // 1. Visual Scan Logic
+  // 1. Visual Scan Logic + Reset on new spin
   useEffect(() => {
+    console.log('[MapSelector] Effect #1 triggered - isSpinning:', isSpinning, 'needsReset:', needsResetRef.current);
+    
     let interval: NodeJS.Timeout;
-    let timer: NodeJS.Timeout
+    let timer: NodeJS.Timeout;
+    
     if (isSpinning) {
-      console.log('[MapSelector] Spinning started');
-      // Reset all state when spinning starts
+      console.log('[MapSelector] Spinning started, needsReset:', needsResetRef.current);
+      
+      // Increment spin cycle to invalidate any pending zoom from previous spin
+      spinCycleRef.current += 1;
+      const currentCycle = spinCycleRef.current;
+      console.log('[MapSelector] New spin cycle:', currentCycle);
+      
+      // If we've zoomed before, reset the map position immediately
+      if (needsResetRef.current) {
+        console.log('[MapSelector] Resetting map to initial position');
+        setMapConfig(INITIAL_MAP_CONFIG);
+        needsResetRef.current = false;
+      }
+      
+      // Clear state to start fresh spin
       setSelectedCountry(null);
       setWinnerCoords(null);
-      calculatedCountryRef.current = null; // Reset calculated country ref
-      setMapConfig(INITIAL_MAP_CONFIG);
+      calculatedCountryRef.current = null;
+      hasZoomedForCountryRef.current = null; // Reset zoom tracker
       
       interval = setInterval(() => {
         const newIndex = Math.floor(Math.random() * countries.length);
         setCurrentIndex(newIndex);
-      }, 80); // Speed of the highlight flicker
+      }, 80);
 
-      const spinDuration = 3000; // 3 seconds
+      const spinDuration = 3000;
       timer = setTimeout(() => {
         clearInterval(interval);
         
-        // Pick the actual winner
         const randomIndex = Math.floor(Math.random() * countries.length);
         const winner = countries[randomIndex];
         
-        console.log('[MapSelector] Winner selected:', winner.name, 'at index', randomIndex);
-        setCurrentIndex(randomIndex); // Lock the highlight to the winner
-        setSelectedCountry(winner);   // Trigger the result logic
+        console.log('[MapSelector] Winner selected:', winner.name, 'at index', randomIndex, 'cycle:', currentCycle);
+        setCurrentIndex(randomIndex);
+        setSelectedCountry(winner);
       }, spinDuration);
     } else {
-      console.log('[MapSelector] Spinning stopped');
+      console.log('[MapSelector] Not spinning, effect #1 doing nothing');
     }
+    
     return () => {
       if (interval) clearInterval(interval);
       if (timer) clearTimeout(timer);
@@ -83,14 +105,14 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
     if (selectedCountry && geographiesRef.current.length > 0) {
       // Only calculate if we haven't already calculated for this country
       if (calculatedCountryRef.current?.code !== selectedCountry.code) {
-        console.log('[MapSelector] Calculating coordinates for:', selectedCountry.name, 'code:', selectedCountry.code);
+        console.log('[MapSelector] Calculating coordinates for:', selectedCountry.name, 'code:', selectedCountry.code, 'cycle:', spinCycleRef.current);
         const matchingGeo = geographiesRef.current.find(
           (geo) => geo.id === selectedCountry.code
         );
         console.log(matchingGeo);
         if (matchingGeo) {
           const centroid = geoCentroid(matchingGeo);
-          console.log('[MapSelector] Centroid calculated:', centroid);
+          console.log('[MapSelector] Centroid calculated:', centroid, 'for cycle:', spinCycleRef.current);
           setWinnerCoords(centroid as [number, number]);
           calculatedCountryRef.current = selectedCountry;
         } else {
@@ -116,26 +138,32 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
 
   // 3. Cinematic Zoom Handler (triggered once winnerCoords are found)
   useEffect(() => {
-    // Allow zoom once a country is selected (even if isSpinning is still true)
-    // Only prevent zoom if spinning AND no country selected yet
-    if (isSpinning && !selectedCountry) {
-      return;
-    }
-    
     if (winnerCoords && selectedCountry) {
-      console.log('[MapSelector] Zooming to winner coordinates:', winnerCoords, 'for country:', selectedCountry.name);
-      setMapConfig({
-        center: winnerCoords,
-        scale: 600,
-      });
-
-      const timer = setTimeout(() => {
-        console.log('[MapSelector] Calling onCountrySelected callback with:', selectedCountry.name);
+      console.log('[MapSelector] Zoom effect triggered for:', selectedCountry.name, 'coords:', winnerCoords, 'cycle:', spinCycleRef.current);
+      
+      // Only zoom once per country
+      if (hasZoomedForCountryRef.current === selectedCountry.code) {
+        console.log('[MapSelector] Already zoomed for this country, skipping');
+        return;
+      }
+      
+      // Only zoom if this selectedCountry was set in the current spin cycle
+      if (calculatedCountryRef.current?.code === selectedCountry.code) {
+        console.log('[MapSelector] Zooming to winner coordinates:', winnerCoords, 'for country:', selectedCountry.name);
+        setMapConfig({
+          center: winnerCoords,
+          scale: 600,
+        });
+        needsResetRef.current = true;
+        hasZoomedForCountryRef.current = selectedCountry.code; // Mark as zoomed
+        
+        // Call the callback
         onCountrySelected(selectedCountry);
-      }, 2000);
-      return () => clearTimeout(timer);
+      } else {
+        console.log('[MapSelector] Skipping zoom - country from previous spin cycle');
+      }
     }
-  }, [winnerCoords, selectedCountry, onCountrySelected, isSpinning]);
+  }, [winnerCoords, selectedCountry, onCountrySelected]);
 
   // 4. Curved flight path using dynamically calculated centroid
   const flightPath = useMemo(() => {
@@ -147,8 +175,13 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   return (
     <div className="relative w-full h-[600px] bg-slate-950 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
       <motion.div
-        animate={{ x: isSpinning && !selectedCountry ? [0, -3, 3, 0] : 0 }}
-        transition={{ repeat: isSpinning && !selectedCountry ? Infinity : 0, duration: 0.2 }}
+        animate={{ 
+          x: (isSpinning && !selectedCountry) ? [0, -3, 3, 0] : 0,
+        }}
+        transition={{ 
+          repeat: (isSpinning && !selectedCountry) ? Infinity : 0, 
+          duration: 0.2 
+        }}
         className="w-full h-full"
       >
         <ComposableMap
