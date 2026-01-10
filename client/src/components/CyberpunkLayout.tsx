@@ -26,7 +26,7 @@ export default function CyberpunkLayout({ children }: CyberpunkLayoutProps) {
   };
 
   const navItems = [
-    { path: "/", label: "Spin Wheel", icon: Sparkles },
+    { path: "/", label: "Home", icon: Sparkles },
     { path: "/discover", label: "Discover", icon: Compass },
     { path: "/groups", label: "Groups", icon: Users },
     { path: "/map", label: "Map", icon: MapPin },
