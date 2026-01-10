@@ -8,8 +8,9 @@ if (!connectionString) {
 export default defineConfig({
   schema: "./drizzle/schema.ts",
   out: "./drizzle",
-  dialect: "mysql",
+  dialect: "turso",
   dbCredentials: {
     url: connectionString,
+    authToken: process.env.DATABASE_AUTH_TOKEN,
   },
 });

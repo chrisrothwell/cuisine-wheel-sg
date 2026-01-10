@@ -1,4 +1,5 @@
 import type { CookieOptions, Request } from "express";
+import { ENV } from "./env";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -39,10 +40,17 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const isSecure = isSecureRequest(req);
+
+  // In production (HTTPS), use SameSite=None; Secure for cross-site OAuth flows.
+  // In local development over http://localhost, browsers will reject
+  // SameSite=None cookies that are not Secure, so we fall back to Lax.
+  const sameSite: CookieOptions["sameSite"] = ENV.isProduction ? "none" : "lax";
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    sameSite,
+    secure: ENV.isProduction ? true : isSecure,
   };
 }

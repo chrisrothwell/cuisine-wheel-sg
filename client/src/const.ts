@@ -1,17 +1,28 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-// Generate login URL at runtime so redirect URI reflects the current origin.
+// Generate Google OAuth login URL at runtime so redirect URI reflects the current origin.
 export const getLoginUrl = () => {
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
+  // NOTE: On the client, Vite only exposes variables that start with VITE_
+  const clientId =
+    import.meta.env.VITE_OAUTH_CLIENT_ID ?? import.meta.env.VITE_APP_ID;
+
+  if (!clientId) {
+    console.error(
+      "[Auth] VITE_OAUTH_CLIENT_ID (or VITE_APP_ID) is not configured. Please set it in your .env file."
+    );
+    return "#";
+  }
+
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
-  const state = btoa(redirectUri);
 
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid profile email",
+    access_type: "online",
+    include_granted_scopes: "true",
+  });
 
-  return url.toString();
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 };

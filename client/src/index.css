@@ -225,4 +225,16 @@
       max-width: 1280px; /* Standard content width */
     }
   }
+
+  @keyframes line-draw {
+    from { stroke-dashoffset: 100; }
+    to { stroke-dashoffset: 0; }
+  }
+  
+  .animate-line-draw {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: line-draw 2s ease-out forwards;
+  }
+  
 }

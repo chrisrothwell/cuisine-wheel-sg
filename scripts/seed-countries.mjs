@@ -1,56 +1,70 @@
-import { drizzle } from 'drizzle-orm/mysql2';
-import { countries } from '../drizzle/schema.ts';
-import dotenv from 'dotenv';
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient } from "@libsql/client";
+import { countries } from "../drizzle/schema.ts";
+import dotenv from "dotenv";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env") });
 
-const db = drizzle(process.env.DATABASE_URL);
+if (!process.env.DATABASE_URL || !process.env.DATABASE_AUTH_TOKEN) {
+  throw new Error("DATABASE_URL environment variable is required");
+}
 
-const worldCountries = [
-  { name: 'China', code: 'CHN', cuisineType: 'Chinese', flagEmoji: '🇨🇳', description: 'Diverse regional cuisines with bold flavors' },
-  { name: 'Japan', code: 'JPN', cuisineType: 'Japanese', flagEmoji: '🇯🇵', description: 'Refined cuisine emphasizing fresh ingredients' },
-  { name: 'Korea', code: 'KOR', cuisineType: 'Korean', flagEmoji: '🇰🇷', description: 'Spicy and fermented flavors' },
-  { name: 'Thailand', code: 'THA', cuisineType: 'Thai', flagEmoji: '🇹🇭', description: 'Balance of sweet, sour, salty, and spicy' },
-  { name: 'Vietnam', code: 'VNM', cuisineType: 'Vietnamese', flagEmoji: '🇻🇳', description: 'Fresh herbs and light, flavorful broths' },
-  { name: 'India', code: 'IND', cuisineType: 'Indian', flagEmoji: '🇮🇳', description: 'Rich spices and diverse regional styles' },
-  { name: 'Italy', code: 'ITA', cuisineType: 'Italian', flagEmoji: '🇮🇹', description: 'Pasta, pizza, and Mediterranean flavors' },
-  { name: 'France', code: 'FRA', cuisineType: 'French', flagEmoji: '🇫🇷', description: 'Classic techniques and refined dishes' },
-  { name: 'Spain', code: 'ESP', cuisineType: 'Spanish', flagEmoji: '🇪🇸', description: 'Tapas and bold Mediterranean flavors' },
-  { name: 'Mexico', code: 'MEX', cuisineType: 'Mexican', flagEmoji: '🇲🇽', description: 'Vibrant spices and corn-based dishes' },
-  { name: 'USA', code: 'USA', cuisineType: 'American', flagEmoji: '🇺🇸', description: 'Diverse fusion and comfort food' },
-  { name: 'Turkey', code: 'TUR', cuisineType: 'Turkish', flagEmoji: '🇹🇷', description: 'Grilled meats and Mediterranean influences' },
-  { name: 'Greece', code: 'GRC', cuisineType: 'Greek', flagEmoji: '🇬🇷', description: 'Olive oil, feta, and fresh vegetables' },
-  { name: 'Lebanon', code: 'LBN', cuisineType: 'Lebanese', flagEmoji: '🇱🇧', description: 'Mezze and aromatic spices' },
-  { name: 'Indonesia', code: 'IDN', cuisineType: 'Indonesian', flagEmoji: '🇮🇩', description: 'Spicy and coconut-rich dishes' },
-  { name: 'Malaysia', code: 'MYS', cuisineType: 'Malaysian', flagEmoji: '🇲🇾', description: 'Multicultural fusion of flavors' },
-  { name: 'Singapore', code: 'SGP', cuisineType: 'Singaporean', flagEmoji: '🇸🇬', description: 'Hawker culture and diverse cuisines' },
-  { name: 'Philippines', code: 'PHL', cuisineType: 'Filipino', flagEmoji: '🇵🇭', description: 'Sweet and savory combinations' },
-  { name: 'Brazil', code: 'BRA', cuisineType: 'Brazilian', flagEmoji: '🇧🇷', description: 'Churrasco and tropical flavors' },
-  { name: 'Argentina', code: 'ARG', cuisineType: 'Argentinian', flagEmoji: '🇦🇷', description: 'Grilled meats and empanadas' },
-  { name: 'Peru', code: 'PER', cuisineType: 'Peruvian', flagEmoji: '🇵🇪', description: 'Ceviche and Andean ingredients' },
-  { name: 'Morocco', code: 'MAR', cuisineType: 'Moroccan', flagEmoji: '🇲🇦', description: 'Tagines and aromatic spices' },
-  { name: 'Ethiopia', code: 'ETH', cuisineType: 'Ethiopian', flagEmoji: '🇪🇹', description: 'Injera and spicy stews' },
-  { name: 'UK', code: 'GBR', cuisineType: 'British', flagEmoji: '🇬🇧', description: 'Traditional pub fare and comfort food' },
-  { name: 'Germany', code: 'DEU', cuisineType: 'German', flagEmoji: '🇩🇪', description: 'Sausages and hearty dishes' },
-  { name: 'Russia', code: 'RUS', cuisineType: 'Russian', flagEmoji: '🇷🇺', description: 'Borscht and dumplings' },
-  { name: 'Australia', code: 'AUS', cuisineType: 'Australian', flagEmoji: '🇦🇺', description: 'Modern fusion and cafe culture' },
-  { name: 'Canada', code: 'CAN', cuisineType: 'Canadian', flagEmoji: '🇨🇦', description: 'Poutine and multicultural influences' },
-  { name: 'Portugal', code: 'PRT', cuisineType: 'Portuguese', flagEmoji: '🇵🇹', description: 'Seafood and pastries' },
-  { name: 'Netherlands', code: 'NLD', cuisineType: 'Dutch', flagEmoji: '🇳🇱', description: 'Cheese and comfort food' },
-];
+const client = createClient({
+  url: process.env.DATABASE_URL,
+  authToken: process.env.DATABASE_AUTH_TOKEN,
+});
+
+const db = drizzle(client);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function loadCountriesFromJson() {
+  const filePath = path.join(__dirname, "display-countries.json");
+  const raw = await fs.readFile(filePath, "utf-8");
+  const data = JSON.parse(raw);
+
+  return data.map(country => ({
+    name: country.name,
+    code: country["alpha-3"],
+    description: null,
+    region: country.region || null,
+    subRegion: country["sub-region"] || null,
+    unMember: Boolean(country.un_member),
+    unMembershipStatus: country.un_membership_status || null,
+  }));
+}
 
 async function seed() {
-  console.log('Seeding countries...');
+  const filePath = path.join(__dirname, "display-countries.json");
+  console.log("Seeding countries from", filePath);
+
+  const worldCountries = await loadCountriesFromJson();
   for (const country of worldCountries) {
     try {
-      await db.insert(countries).values(country).onDuplicateKeyUpdate({ set: { name: country.name } });
+      await db
+        .insert(countries)
+        .values(country)
+        .onConflictDoUpdate({
+          target: countries.code,
+          set: {
+            name: country.name
+          },
+        });
       console.log(`✓ ${country.name}`);
     } catch (error) {
-      console.error(`✗ ${country.name}:`, error.message);
+      console.error(`✗ ${country.name}:`, error?.message ?? error);
     }
   }
-  console.log('Seeding complete!');
+
+  console.log("Seeding complete!");
   process.exit(0);
 }
 
-seed().catch(console.error);
+seed().catch(error => {
+  console.error("Seeding failed:", error);
+  process.exit(1);
+});

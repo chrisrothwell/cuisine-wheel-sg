@@ -1,5 +1,6 @@
 import { eq, and, like } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient } from "@libsql/client";
 import { InsertUser, users, countries, restaurants, visits, reviews, groups, groupMembers, InsertCountry, InsertRestaurant, InsertVisit, InsertReview, InsertGroup, InsertGroupMember } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -8,7 +9,11 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = createClient({
+        url: process.env.DATABASE_URL,
+        authToken: process.env.DATABASE_AUTH_TOKEN, // Optional for local, required for Turso Cloud
+      });
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -69,7 +74,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -95,7 +101,12 @@ export async function getUserByOpenId(openId: string) {
 export async function getAllCountries() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(countries).orderBy(countries.name);
+  // Only return countries that are UN members
+  return await db
+    .select()
+    .from(countries)
+    .where(eq(countries.unMember, true))
+    .orderBy(countries.name);
 }
 
 export async function getCountryById(id: number) {

@@ -30,11 +30,10 @@ const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserI
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
+    // Only log if OAuth server URL is configured (Manus auth)
+    // With Google OAuth, this will be empty and that's expected
+    if (ENV.oAuthServerUrl) {
+      console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     }
   }
 
@@ -270,21 +269,33 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
+    // If user not in DB, create minimal user record from session data
+    // (OAuth callback should have created it, but handle edge case gracefully)
     if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
+      // Only try OAuth server sync if OAUTH_SERVER_URL is configured (Manus auth)
+      if (ENV.oAuthServerUrl) {
+        try {
+          const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
+          await db.upsertUser({
+            openId: userInfo.openId,
+            name: userInfo.name || null,
+            email: userInfo.email ?? null,
+            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+            lastSignedIn: signedInAt,
+          });
+          user = await db.getUserByOpenId(userInfo.openId);
+        } catch (error) {
+          console.error("[Auth] Failed to sync user from OAuth:", error);
+          throw ForbiddenError("Failed to sync user info");
+        }
+      } else {
+        // With Google OAuth (no OAuth server), create user from session data
         await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          openId: sessionUserId,
+          name: session.name || null,
           lastSignedIn: signedInAt,
         });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+        user = await db.getUserByOpenId(sessionUserId);
       }
     }
 

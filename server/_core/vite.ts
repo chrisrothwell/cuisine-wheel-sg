@@ -48,6 +48,8 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
+  // In production, the bundled server runs from dist/index.js, so import.meta.dirname is 'dist'
+  // In development, this function shouldn't be called, but if it is, we resolve from server/_core
   const distPath =
     process.env.NODE_ENV === "development"
       ? path.resolve(import.meta.dirname, "../..", "dist", "public")

@@ -84,9 +84,9 @@ export default function SpinningWheel({ countries, onCountrySelected }: Spinning
                   }}
                 >
                   <div className="text-center">
-                    <div className="text-2xl mb-1">{country.flagEmoji}</div>
+                    <div className="text-2xl mb-1">{country.name}</div>
                     <div className="text-xs font-bold text-foreground uppercase tracking-wider whitespace-nowrap">
-                      {country.cuisineType}
+                      {country.name}
                     </div>
                   </div>
                 </div>
@@ -115,8 +115,8 @@ export default function SpinningWheel({ countries, onCountrySelected }: Spinning
       {/* Selected result */}
       {selectedCountry && !isSpinning && (
         <div className="hud-frame p-6 bg-card border border-primary text-center animate-in fade-in zoom-in duration-500">
-          <div className="text-5xl mb-3">{selectedCountry.flagEmoji}</div>
-          <h3 className="text-2xl font-bold neon-pink mb-2">{selectedCountry.cuisineType}</h3>
+          <div className="text-5xl mb-3">{selectedCountry.name}</div>
+          <h3 className="text-2xl font-bold neon-pink mb-2">{selectedCountry.name}</h3>
           <p className="text-muted-foreground">{selectedCountry.description}</p>
         </div>
       )}

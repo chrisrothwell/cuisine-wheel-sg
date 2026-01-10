@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import SpinningWheel from "@/components/SpinningWheel";
+import MapSelector from "@/components/MapSelector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, Star, Users, ExternalLink } from "lucide-react";
@@ -9,6 +10,7 @@ import { Link } from "wouter";
 
 export default function Home() {
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const [isSpinning, setIsSpinning] = useState(false);
   const { data: countries, isLoading } = trpc.countries.list.useQuery();
   const { data: restaurants, refetch: refetchRestaurants } = trpc.restaurants.getByCountry.useQuery(
     { countryId: selectedCountry?.id || 0 },
@@ -17,7 +19,13 @@ export default function Home() {
 
   const handleCountrySelected = (country: Country) => {
     setSelectedCountry(country);
+    setIsSpinning(false);
     refetchRestaurants();
+  };
+
+  const handleSpin = () => {
+    setIsSpinning(true);
+    setSelectedCountry(null);
   };
 
   const generateGoogleMapsSearchUrl = (cuisineType: string) => {
@@ -47,10 +55,22 @@ export default function Home() {
 
       {/* Spinning wheel */}
       <div className="mb-16">
-        <SpinningWheel
-          countries={countries || []}
-          onCountrySelected={handleCountrySelected}
-        />
+        <div className="flex flex-col items-center gap-4">
+          {!isSpinning && (
+            <Button
+              onClick={handleSpin}
+              size="lg"
+              className="gap-2"
+            >
+              Spin the Grid
+            </Button>
+          )}
+          <MapSelector
+            countries={countries || []}
+            onCountrySelected={handleCountrySelected}
+            isSpinning={isSpinning}
+          />
+        </div>
       </div>
 
       {/* Selected country restaurants */}
@@ -60,10 +80,10 @@ export default function Home() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-3xl font-bold neon-cyan mb-2">
-                  {selectedCountry.flagEmoji} {selectedCountry.cuisineType} Restaurants
+                  {selectedCountry.name} Restaurants
                 </h2>
                 <p className="text-muted-foreground">
-                  Explore {selectedCountry.cuisineType} cuisine in Singapore
+                  Explore {selectedCountry.name} cuisine in Singapore
                 </p>
               </div>
               <Link href="/discover">
@@ -106,7 +126,7 @@ export default function Home() {
                   No restaurants found for this cuisine yet.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Be the first to add a {selectedCountry.cuisineType} restaurant!
+                  Be the first to add a {selectedCountry.name} restaurant!
                 </p>
               </div>
             )}
@@ -114,7 +134,7 @@ export default function Home() {
             {/* Google Maps search link */}
             <div className="mt-8 pt-6 border-t border-border flex justify-center">
               <a
-                href={generateGoogleMapsSearchUrl(selectedCountry.cuisineType)}
+                href={generateGoogleMapsSearchUrl(selectedCountry.name)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition-colors font-semibold hover:underline"

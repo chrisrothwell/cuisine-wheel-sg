@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6ee7f491-ee97-4f7e-aefc-1974cee45d79",
-  "prevId": "1d25f930-4a26-424d-b4a7-8c6be8fc0a09",
+  "id": "1d25f930-4a26-424d-b4a7-8c6be8fc0a09",
+  "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "countries": {
       "name": "countries",
@@ -26,6 +26,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "cuisine_type": {
+          "name": "cuisine_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "flag_emoji": {
+          "name": "flag_emoji",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "description": {
@@ -57,11 +71,18 @@
           "autoincrement": false,
           "default": false
         },
-        "un_membership_status": {
-          "name": "un_membership_status",
-          "type": "text",
+        "lat": {
+          "name": "lat",
+          "type": "real",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lng": {
+          "name": "lng",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
           "autoincrement": false
         },
         "created_at": {
