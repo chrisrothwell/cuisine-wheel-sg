@@ -22,9 +22,8 @@ type Bindings = {
   // Additional bindings
   TURSO_DATABASE_URL?: string;
   TURSO_AUTH_TOKEN?: string;
-  GOOGLE_OAUTH_CLIENT_ID?: string;
-  GOOGLE_OAUTH_CLIENT_SECRET?: string;
-  GOOGLE_OAUTH_REDIRECT_URI?: string;
+  VITE_OAUTH_CLIENT_ID?: string;
+  OAUTH_CLIENT_SECRET?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -141,18 +140,20 @@ app.get('/api/oauth/callback', async (c) => {
     return c.redirect('/?error=missing_code', 302);
   }
 
-  const clientId = c.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = c.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const redirectUri = c.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const clientId = c.env.VITE_OAUTH_CLIENT_ID;
+  const clientSecret = c.env.OAUTH_CLIENT_SECRET;
 
-  if (!clientId || !clientSecret || !redirectUri) {
+  if (!clientId || !clientSecret) {
     console.error('[OAuth] Missing required configuration:', {
       hasClientId: !!clientId,
       hasClientSecret: !!clientSecret,
-      hasRedirectUri: !!redirectUri,
     });
     return c.redirect('/?error=oauth_not_configured', 302);
   }
+
+  // Build redirect URI dynamically to match what the frontend uses
+  const url = new URL(c.req.url);
+  const redirectUri = `${url.protocol}//${url.host}/api/oauth/callback`;
 
   try {
     // Exchange code for tokens
