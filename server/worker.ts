@@ -7,6 +7,7 @@ import type { User } from '../drizzle/schema';
 import type { TrpcContext } from './_core/context';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { COOKIE_NAME } from '../shared/const';
+import * as db from './db';
 
 type Bindings = {
   // Environment variables used by ENV
@@ -127,13 +128,96 @@ app.get('/api/place-photo', async (c) => {
   }
 });
 
-// OAuth routes (if you need them)
-// You'll need to implement these based on your OAuth flow
+// OAuth callback
 app.get('/api/oauth/callback', async (c) => {
-  // Implement OAuth callback logic here
-  // This is a placeholder
-  return c.text('OAuth not yet implemented in Workers', 501);
+  const code = c.req.query('code');
+  const error = c.req.query('error');
+
+  if (error) {
+    return c.redirect(`/?error=${encodeURIComponent(error)}`, 302);
+  }
+
+  if (!code) {
+    return c.redirect('/?error=missing_code', 302);
+  }
+
+  const clientId = c.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = c.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const redirectUri = c.env.GOOGLE_OAUTH_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    return c.redirect('/?error=oauth_not_configured', 302);
+  }
+
+  try {
+    // Exchange code for tokens
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.text();
+      console.error('Token exchange failed:', errorData);
+      return c.redirect('/?error=token_exchange_failed', 302);
+    }
+
+    const tokens = await tokenResponse.json();
+    const accessToken = tokens.access_token;
+
+    // Get user info from Google
+    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!userInfoResponse.ok) {
+      console.error('Failed to fetch user info');
+      return c.redirect('/?error=user_info_failed', 302);
+    }
+
+    const googleUser = await userInfoResponse.json();
+    
+    // Use Google ID as openId (since your system uses openId)
+    const openId = `google_${googleUser.id}`;
+    const signedInAt = new Date();
+
+    // Upsert user in database
+    await db.upsertUser({
+      openId,
+      name: googleUser.name || null,
+      email: googleUser.email || null,
+      loginMethod: 'google',
+      lastSignedIn: signedInAt,
+    });
+
+    // Create session token using your SDK
+    const sessionToken = await sdk.createSessionToken(openId, {
+      name: googleUser.name || googleUser.email || 'User',
+    });
+
+    // Set session cookie
+    setCookie(c, COOKIE_NAME, sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      maxAge: 60 * 60 * 24 * 365, // 1 year (matches ONE_YEAR_MS)
+      path: '/',
+    });
+
+    return c.redirect('/', 302);
+  } catch (err) {
+    console.error('OAuth callback error:', err);
+    return c.redirect('/?error=oauth_failed', 302);
+  }
 });
+
 
 // Handle cookie clearing for logout
 app.use('*', async (c, next) => {
