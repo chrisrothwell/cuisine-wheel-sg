@@ -71,19 +71,35 @@ export type InsertRestaurant = typeof restaurants.$inferInsert;
  */
 export const visits = sqliteTable("visits", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("userId").notNull(),
   restaurantId: integer("restaurantId").notNull(),
+  groupId: integer("group_id").references(() => groups.id),
   visitedAt: integer("visited_at", { mode: "timestamp" }).$defaultFn(() => new Date()).notNull(),
   notes: text("notes"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()).notNull(),
 }, (table) => [
-  unique("user_restaurant_unique").on(table.userId, table.restaurantId),
-  index("user_idx").on(table.userId),
   index("restaurant_idx").on(table.restaurantId),
+  index("group_idx").on(table.groupId),
 ]);
 
 export type Visit = typeof visits.$inferSelect;
 export type InsertVisit = typeof visits.$inferInsert;
+
+/**
+ * Junction table for visit participants (many-to-many relationship)
+ */
+export const visitParticipants = sqliteTable("visit_participants", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  visitId: integer("visit_id").notNull().references(() => visits.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()).notNull(),
+}, (table) => [
+  unique("visit_user_unique").on(table.visitId, table.userId),
+  index("visit_participant_visit_idx").on(table.visitId),
+  index("visit_participant_user_idx").on(table.userId),
+]);
+
+export type VisitParticipant = typeof visitParticipants.$inferSelect;
+export type InsertVisitParticipant = typeof visitParticipants.$inferInsert;
 
 /**
  * User ratings and reviews for restaurants

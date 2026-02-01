@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useCountries } from "@/hooks/useCountries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,7 +22,7 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState("");
 
-  const { data: countries } = trpc.countries.list.useQuery();
+  const { data: countries } = useCountries();
   const utils = trpc.useUtils();
   const importMutation = trpc.restaurants.importFromGoogleMaps.useMutation({
     onSuccess: () => {
@@ -34,33 +35,7 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
     },
   });
 
-  const parseGoogleMapsUrl = (url: string) => {
-    try {
-      const urlObj = new URL(url);
-      
-      // Extract place name from URL path
-      const pathMatch = urlObj.pathname.match(/\/place\/([^/]+)/);
-      const name = pathMatch ? decodeURIComponent(pathMatch[1]).replace(/\+/g, ' ') : "";
-
-      // Extract coordinates from hash: /@lat,lng,zoom
-      const hashMatch = urlObj.hash.match(/@([-\d.]+),([-\d.]+)/);
-      const latitude = hashMatch ? hashMatch[1] : "";
-      const longitude = hashMatch ? hashMatch[2] : "";
-
-      if (!name || !latitude || !longitude) {
-        throw new Error("Could not extract all required information from the Google Maps link");
-      }
-
-      return {
-        name,
-        latitude,
-        longitude,
-        address: name, // Use name as placeholder for address
-      };
-    } catch (err) {
-      throw new Error("Invalid Google Maps URL. Please paste a valid Google Maps link.");
-    }
-  };
+  const parseMapsUrlMutation = trpc.restaurants.parseMapsUrl.useMutation();
 
   const handleValidateUrl = async () => {
     if (!mapsUrl.trim()) {
@@ -75,15 +50,24 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
 
     setIsValidating(true);
     setError("");
-    
+
     try {
-      const data = parseGoogleMapsUrl(mapsUrl);
+      const data = await parseMapsUrlMutation.mutateAsync({ url: mapsUrl.trim() });
       setParsedData({
-        ...data,
+        name: data.name ?? "Imported Place",
+        address: data.address ?? data.name ?? "Unknown",
+        latitude: data.latitude!,
+        longitude: data.longitude!,
         countryId: Number(selectedCountryId),
+        placeId: data.placeId,
+        phoneNumber: data.phoneNumber,
+        website: data.website,
+        priceLevel: data.priceLevel,
+        imageUrl: data.imageUrl,
+        description: data.description,
       });
     } catch (err) {
-      setError((err as Error).message);
+      setError((err as Error).message ?? "Invalid Google Maps URL. Please paste a valid link.");
       setParsedData(null);
     } finally {
       setIsValidating(false);
@@ -99,6 +83,12 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
       latitude: parsedData.latitude,
       longitude: parsedData.longitude,
       countryId: parsedData.countryId,
+      placeId: parsedData.placeId,
+      phoneNumber: parsedData.phoneNumber,
+      website: parsedData.website,
+      priceLevel: parsedData.priceLevel,
+      imageUrl: parsedData.imageUrl,
+      description: parsedData.description,
     });
   };
 
@@ -125,7 +115,7 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
           <Alert className="bg-muted/20 border-border">
             <MapPin className="h-4 w-4" />
             <AlertDescription className="text-sm">
-              Open a restaurant on Google Maps, copy the URL from your browser address bar, and paste it here.
+              Open a restaurant on Google Maps, copy the URL (full or short link like maps.app.goo.gl), and paste it here.
             </AlertDescription>
           </Alert>
 
@@ -139,7 +129,7 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
                 setMapsUrl(e.target.value);
                 setError("");
               }}
-              disabled={isValidating || importMutation.isPending}
+              disabled={isValidating || importMutation.isPending || parseMapsUrlMutation.isPending}
               className="bg-background"
             />
           </div>
@@ -177,7 +167,10 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
                 <div className="font-semibold mb-1">Ready to import:</div>
                 <div className="text-xs space-y-0.5">
                   <div><strong>Name:</strong> {parsedData.name}</div>
-                  <div><strong>Coordinates:</strong> {parsedData.latitude}, {parsedData.longitude}</div>
+                  <div><strong>Address:</strong> {parsedData.address}</div>
+                  {parsedData.phoneNumber && <div><strong>Phone:</strong> {parsedData.phoneNumber}</div>}
+                  {parsedData.website && <div><strong>Website:</strong> {parsedData.website}</div>}
+                  {parsedData.priceLevel != null && <div><strong>Price:</strong> {"$".repeat(parsedData.priceLevel)}</div>}
                 </div>
               </AlertDescription>
             </Alert>
@@ -188,7 +181,7 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
             {!parsedData ? (
               <Button
                 onClick={handleValidateUrl}
-                disabled={isValidating || !mapsUrl.trim() || !selectedCountryId}
+                disabled={isValidating || parseMapsUrlMutation.isPending || !mapsUrl.trim() || !selectedCountryId}
                 className="flex-1 gap-2"
               >
                 {isValidating ? (
@@ -197,7 +190,7 @@ export default function GoogleMapsImport({ open, onClose, countryId: defaultCoun
                     Validating...
                   </>
                 ) : (
-                  "Parse URL"
+                  "Fetch place details"
                 )}
               </Button>
             ) : (

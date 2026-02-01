@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,14 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, MapPin, Navigation } from "lucide-react";
 import { toast } from "sonner";
+import { useCountries } from "@/hooks/useCountries";
 
 export default function MapPage() {
   const [selectedCountryId, setSelectedCountryId] = useState<string>("all");
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [markers, setMarkers] = useState<google.maps.Marker[]>([]);
+  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null);
 
-  const { data: countries } = trpc.countries.list.useQuery();
+  const { data: countries } = useCountries();
   const { data: allRestaurants, isLoading } = trpc.restaurants.list.useQuery();
 
   // Filter restaurants
@@ -28,6 +29,10 @@ export default function MapPage() {
     return countries?.find(c => c.id === countryId)?.cuisineType || "Unknown";
   };
 
+  const getCountryFlag = (countryId: number) => {
+    return countries?.find(c => c.id === countryId)?.flagEmoji || "🏳️";
+  };
+
   const handleMapReady = useCallback((googleMap: google.maps.Map) => {
     setMap(googleMap);
     
@@ -37,36 +42,59 @@ export default function MapPage() {
   }, []);
 
   // Update markers when filtered restaurants change
-  const updateMarkers = useCallback(() => {
-    if (!map || !filteredRestaurants) return;
+  useEffect(() => {
+    if (!map || !filteredRestaurants || !countries) return;
+
+    // Create a custom marker content with flag emoji for AdvancedMarkerElement
+    const createFlagMarkerContent = (flagEmoji: string) => {
+      const div = document.createElement("div");
+      div.style.width = "40px";
+      div.style.height = "50px";
+      div.style.display = "flex";
+      div.style.alignItems = "center";
+      div.style.justifyContent = "center";
+      div.style.backgroundImage = `url("data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">
+          <path d="M20 0 C12 0 6 6 6 14 C6 22 20 50 20 50 C20 50 34 22 34 14 C34 6 28 0 20 0 Z" 
+                fill="#ffffff" stroke="#333" stroke-width="2"/>
+        </svg>
+      `)}")`;
+      div.style.backgroundSize = "contain";
+      div.style.backgroundRepeat = "no-repeat";
+      div.style.backgroundPosition = "center";
+      div.style.fontSize = "20px";
+      div.style.lineHeight = "1";
+      div.style.cursor = "pointer";
+      div.textContent = flagEmoji;
+      return div;
+    };
 
     // Clear existing markers
-    markers.forEach(marker => marker.setMap(null));
-    setMarkers([]);
+    markersRef.current.forEach(marker => {
+      marker.map = null;
+    });
+    markersRef.current = [];
 
-    const newMarkers: google.maps.Marker[] = [];
+    const newMarkers: google.maps.marker.AdvancedMarkerElement[] = [];
     const bounds = new google.maps.LatLngBounds();
 
     filteredRestaurants.forEach((restaurant) => {
       if (!restaurant.latitude || !restaurant.longitude) return;
 
       const position = {
-        lat: parseFloat(restaurant.latitude),
-        lng: parseFloat(restaurant.longitude),
+        lat: restaurant.latitude,
+        lng: restaurant.longitude,
       };
 
-      const marker = new google.maps.Marker({
-        position,
+      // Get flag emoji for this restaurant's country
+      const flagEmoji = getCountryFlag(restaurant.countryId);
+      const markerContent = createFlagMarkerContent(flagEmoji);
+
+      const marker = new google.maps.marker.AdvancedMarkerElement({
         map,
+        position,
         title: restaurant.name,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: "#ff0080", // Neon pink
-          fillOpacity: 0.8,
-          strokeColor: "#00ffff", // Neon cyan
-          strokeWeight: 2,
-        },
+        content: markerContent,
       });
 
       marker.addListener("click", () => {
@@ -78,7 +106,7 @@ export default function MapPage() {
       bounds.extend(position);
     });
 
-    setMarkers(newMarkers);
+    markersRef.current = newMarkers;
 
     // Fit map to show all markers
     if (newMarkers.length > 0) {
@@ -89,12 +117,15 @@ export default function MapPage() {
         google.maps.event.removeListener(listener);
       });
     }
-  }, [map, filteredRestaurants]);
 
-  // Update markers when filters change
-  useState(() => {
-    updateMarkers();
-  });
+    // Cleanup function
+    return () => {
+      markersRef.current.forEach(marker => {
+        marker.map = null;
+      });
+      markersRef.current = [];
+    };
+  }, [map, filteredRestaurants, countries]);
 
   const handleGetDirections = (restaurant: any) => {
     if (!restaurant.latitude || !restaurant.longitude) {
@@ -165,8 +196,8 @@ export default function MapPage() {
                     setSelectedRestaurant(restaurant);
                     if (map && restaurant.latitude && restaurant.longitude) {
                       map.panTo({
-                        lat: parseFloat(restaurant.latitude),
-                        lng: parseFloat(restaurant.longitude),
+                        lat: restaurant.latitude,
+                        lng: restaurant.longitude,
                       });
                       map.setZoom(16);
                     }

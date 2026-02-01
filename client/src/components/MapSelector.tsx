@@ -10,14 +10,15 @@ import {
 import { geoInterpolate, geoCentroid } from "d3-geo";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { type Country } from "../../../drizzle/schema";
+import { type CountryWithDisplay } from "@/hooks/useCountries";
 
 const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/main/world.json";
 const SG_COORDS: [number, number] = [103.8198, 1.3521];
 const INITIAL_MAP_CONFIG = { center: [103.8198, 1.3521] as [number, number], scale: 280 };
 
 interface MapSelectorProps {
-  countries: Country[];
-  onCountrySelected: (country: Country) => void;
+  countries: CountryWithDisplay[];
+  onCountrySelected: (country: CountryWithDisplay) => void;
   isSpinning: boolean;
 }
 
@@ -42,7 +43,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   };
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<CountryWithDisplay | null>(null);
   const [rotationOffset, setRotationOffset] = useState(0);
   const [isZooming, setIsZooming] = useState(false);
   
@@ -52,7 +53,7 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
   // Ref to store geographies data for centroid calculation
   const geographiesRef = useRef<any[]>([]);
   // Ref to track which country we've calculated coordinates for
-  const calculatedCountryRef = useRef<Country | null>(null);
+  const calculatedCountryRef = useRef<CountryWithDisplay | null>(null);
   // Ref to track if we need to reset on next spin
   const needsResetRef = useRef(false);
   // Ref to track the current spin cycle - prevents old coords from triggering zoom

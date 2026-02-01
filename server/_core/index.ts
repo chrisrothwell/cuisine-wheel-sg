@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { ENV } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +37,32 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // Place photo proxy (for Places API photo_reference)
+  app.get("/api/place-photo", async (req, res) => {
+    const ref = req.query.ref;
+    if (!ref || typeof ref !== "string") {
+      return res.status(400).send("Missing ref");
+    }
+    if (!ENV.GOOGLE_PLACE_URL || !ENV.GOOGLE_PLACE_API_KEY) {
+      return res.status(503).send("Place photo proxy not configured");
+    }
+    try {
+      const url = `${ENV.GOOGLE_PLACE_URL.replace(/\/+$/, "")}/v1/maps/proxy/maps/api/place/photo?maxwidth=800&photo_reference=${encodeURIComponent(ref)}&key=${ENV.GOOGLE_PLACE_API_KEY}`;
+      const response = await fetch(url, { redirect: "manual" });
+      if (response.status === 302 && response.headers.get("location")) {
+        return res.redirect(302, response.headers.get("location")!);
+      }
+      if (response.ok) {
+        const buffer = await response.arrayBuffer();
+        res.set("Content-Type", response.headers.get("content-type") || "image/jpeg");
+        return res.send(Buffer.from(buffer));
+      }
+      res.status(response.status).send("Failed to fetch photo");
+    } catch (err) {
+      console.error("[place-photo]", err);
+      res.status(500).send("Failed to fetch photo");
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",

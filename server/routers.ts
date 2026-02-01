@@ -5,8 +5,38 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
-import { notifyOwner } from "./_core/notification";
-import { parseGoogleMapsUrl, isValidGoogleMapsUrl } from "./googleMapsHelper";
+import { resolveAndParseMapsUrl } from "./googleMapsHelper";
+import countriesDataRaw from "../client/src/countries.json";
+import type { Country } from "../drizzle/schema";
+
+// Transform the JSON data to match the database schema
+// Using 'any' type to avoid esbuild issues with kebab-case property names
+function transformCountriesData(data: any[]): Country[] {
+  return data.map((item: any, index: number) => {
+    const alpha2 = item["alpha-2"] as string;
+    const alpha3 = item["alpha-3"] as string;
+    const subRegion = item["sub-region"] as string | undefined;
+    const region = item.region as string | undefined;
+    const unMember = item.un_member as boolean | undefined;
+    const unMembershipStatus = item.un_membership_status as string | undefined;
+    
+    return {
+      id: index + 1, // Generate sequential IDs
+      name: item.name as string,
+      code: alpha2, // Map alpha-2 to code
+      alpha2: alpha2,
+      alpha3: alpha3,
+      description: null, // Not available in JSON
+      region: region && region.trim() !== "" ? region : null,
+      subRegion: subRegion && subRegion.trim() !== "" ? subRegion : null,
+      unMember: unMember ?? false,
+      unMembershipStatus: unMembershipStatus && unMembershipStatus.trim() !== "" ? unMembershipStatus : null,
+      createdAt: new Date(), // Use current date as default
+    };
+  });
+}
+
+const countriesData = transformCountriesData(countriesDataRaw);
 
 export const appRouter = router({
   system: systemRouter,
@@ -22,7 +52,8 @@ export const appRouter = router({
 
   countries: router({
     list: publicProcedure.query(async () => {
-      return await db.getAllCountries();
+      // Return countries from the imported JSON file
+      return countriesData;
     }),
     
     getById: publicProcedure
@@ -54,7 +85,13 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.searchRestaurants(input.query);
       }),
-    
+
+    parseMapsUrl: publicProcedure
+      .input(z.object({ url: z.string().url() }))
+      .mutation(async ({ input }) => {
+        return await resolveAndParseMapsUrl(input.url);
+      }),
+
     create: protectedProcedure
       .input(z.object({
         countryId: z.number(),
@@ -70,7 +107,19 @@ export const appRouter = router({
         description: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        return await db.createRestaurant(input);
+        return await db.createRestaurant({
+          countryId: input.countryId,
+          name: input.name,
+          address: input.address,
+          latitude: input.latitude !== undefined ? Number(input.latitude) : 0,
+          longitude: input.longitude !== undefined ? Number(input.longitude) : 0,
+          placeId: input.placeId,
+          phoneNumber: input.phoneNumber,
+          website: input.website,
+          priceLevel: input.priceLevel,
+          imageUrl: input.imageUrl,
+          description: input.description,
+        });
       }),
     
     importFromGoogleMaps: protectedProcedure
@@ -84,6 +133,8 @@ export const appRouter = router({
         phoneNumber: z.string().optional(),
         website: z.string().optional(),
         priceLevel: z.number().optional(),
+        imageUrl: z.string().optional(),
+        description: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Check if restaurant already exists
@@ -99,19 +150,15 @@ export const appRouter = router({
         const result = await db.createRestaurant({
           name: input.name,
           address: input.address,
-          latitude: input.latitude,
-          longitude: input.longitude,
+          latitude: Number(input.latitude),
+          longitude: Number(input.longitude),
           countryId: input.countryId,
           placeId: input.placeId,
           phoneNumber: input.phoneNumber,
           website: input.website,
           priceLevel: input.priceLevel,
-        });
-        
-        // Notify owner about new restaurant submission
-        await notifyOwner({
-          title: "New Restaurant Submitted",
-          content: `${ctx.user.name || ctx.user.email} submitted a new restaurant: "${input.name}" at ${input.address}`
+          imageUrl: input.imageUrl,
+          description: input.description,
         });
         
         return result;
@@ -126,7 +173,15 @@ export const appRouter = router({
     checkVisit: protectedProcedure
       .input(z.object({ restaurantId: z.number() }))
       .query(async ({ ctx, input }) => {
-        return await db.checkUserVisit(ctx.user.id, input.restaurantId);
+        const visit = await db.checkUserVisit(ctx.user.id, input.restaurantId);
+        if (!visit) return null;
+        
+        // Get participants for this visit
+        const participants = await db.getVisitParticipants(visit.id);
+        return {
+          ...visit,
+          participants: participants.map(p => p.user?.id).filter(Boolean) as number[],
+        };
       }),
     
     markVisited: protectedProcedure
@@ -136,6 +191,50 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         return await db.markVisited(ctx.user.id, input.restaurantId);
+      }),
+    
+    createOrUpdate: protectedProcedure
+      .input(z.object({
+        restaurantId: z.number(),
+        visitedAt: z.date(),
+        notes: z.string().optional(),
+        groupId: z.number().optional(),
+        participantIds: z.array(z.number()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const existing = await db.checkUserVisit(ctx.user.id, input.restaurantId);
+        const participantIds = input.participantIds && input.participantIds.length > 0 
+          ? input.participantIds 
+          : [ctx.user.id]; // Default to current user if no participants specified
+        
+        if (existing) {
+          await db.updateVisit(existing.id, {
+            visitedAt: input.visitedAt,
+            notes: input.notes,
+            groupId: input.groupId,
+            participantIds,
+          });
+          return { success: true, updated: true };
+        } else {
+          await db.createVisit({
+            restaurantId: input.restaurantId,
+            visitedAt: input.visitedAt,
+            notes: input.notes,
+            groupId: input.groupId,
+            participantIds,
+          });
+          return { success: true, updated: false };
+        }
+      }),
+    
+    delete: protectedProcedure
+      .input(z.object({ restaurantId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const existing = await db.checkUserVisit(ctx.user.id, input.restaurantId);
+        if (existing) {
+          await db.deleteVisit(existing.id);
+        }
+        return { success: true };
       }),
     
     unmarkVisited: protectedProcedure
@@ -173,25 +272,13 @@ export const appRouter = router({
         isPublic: z.boolean().default(true),
       }))
       .mutation(async ({ ctx, input }) => {
-        const result = await db.createReview({
+        return await db.createReview({
           userId: ctx.user.id,
           restaurantId: input.restaurantId,
           rating: input.rating,
           comment: input.comment,
           isPublic: input.isPublic,
         });
-        
-        // Check if restaurant has reached review milestone
-        const avgRating = await db.getRestaurantAverageRating(input.restaurantId);
-        if (avgRating && avgRating.count >= 10 && avgRating.count % 10 === 0) {
-          const restaurant = await db.getRestaurantById(input.restaurantId);
-          await notifyOwner({
-            title: "Restaurant Review Milestone",
-            content: `${restaurant?.name} has reached ${avgRating.count} reviews with an average rating of ${Number(avgRating.avgRating).toFixed(1)} stars!`
-          });
-        }
-        
-        return result;
       }),
     
     update: protectedProcedure
@@ -257,12 +344,6 @@ export const appRouter = router({
           groupId,
           userId: ctx.user.id,
           role: 'owner',
-        });
-        
-        // Notify owner about new group
-        await notifyOwner({
-          title: "New Group Created",
-          content: `${ctx.user.name || ctx.user.email} created a new group: "${input.name}"${input.description ? ` - ${input.description}` : ''}`
         });
         
         return { groupId };

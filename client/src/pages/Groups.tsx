@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Users, Plus, MapPin, Star } from "lucide-react";
 import { toast } from "sonner";
+import { useCountries } from "@/hooks/useCountries";
 
 export default function Groups() {
   const { isAuthenticated } = useAuth();
@@ -241,7 +242,7 @@ function GroupDetailDialog({ groupId, onClose }: { groupId: number; onClose: () 
   const { data: group } = trpc.groups.getById.useQuery({ id: groupId });
   const { data: members } = trpc.groups.getMembers.useQuery({ groupId });
   const { data: visits } = trpc.groups.getVisits.useQuery({ groupId });
-  const { data: countries } = trpc.countries.list.useQuery();
+  const { data: countries } = useCountries();
   const { data: myGroups } = trpc.groups.myGroups.useQuery(undefined, { enabled: isAuthenticated });
 
   const utils = trpc.useUtils();

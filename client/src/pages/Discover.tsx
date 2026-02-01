@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, MapPin, Star, Check, X, Plus } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, MapPin, Star, Check, X, Plus, Calendar, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import GoogleMapsImport from "@/components/GoogleMapsImport";
+import { useCountries } from "@/hooks/useCountries";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Discover() {
   const { isAuthenticated } = useAuth();
@@ -19,7 +22,7 @@ export default function Discover() {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<number | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
-  const { data: countries } = trpc.countries.list.useQuery();
+  const { data: countries } = useCountries();
   const { data: allRestaurants, isLoading } = trpc.restaurants.list.useQuery();
   const { data: myVisits } = trpc.visits.myVisits.useQuery(undefined, { enabled: isAuthenticated });
 
@@ -131,6 +134,7 @@ export default function Discover() {
 }
 
 function RestaurantCard({ restaurant, countryName, isVisited, isAuthenticated, onSelect }: any) {
+  const [logVisitDialogOpen, setLogVisitDialogOpen] = useState(false);
   const utils = trpc.useUtils();
   const markVisitedMutation = trpc.visits.markVisited.useMutation({
     onSuccess: () => {
@@ -161,46 +165,67 @@ function RestaurantCard({ restaurant, countryName, isVisited, isAuthenticated, o
   };
 
   return (
-    <Card 
-      className="bg-muted/20 border-border hover:border-primary transition-all cursor-pointer group"
-      onClick={onSelect}
-    >
-      <CardHeader>
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <CardTitle className="text-lg group-hover:text-primary transition-colors">
-              {restaurant.name}
-            </CardTitle>
-            <CardDescription className="mt-1">
-              <Badge variant="secondary" className="text-xs">
-                {countryName}
-              </Badge>
-            </CardDescription>
+    <>
+      <Card 
+        className="bg-muted/20 border-border hover:border-primary transition-all cursor-pointer group"
+        onClick={onSelect}
+      >
+        <CardHeader>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <CardTitle className="text-lg group-hover:text-primary transition-colors">
+                {restaurant.name}
+              </CardTitle>
+              <CardDescription className="mt-1">
+                <Badge variant="secondary" className="text-xs">
+                  {countryName}
+                </Badge>
+              </CardDescription>
+            </div>
+            {isAuthenticated && (
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant={isVisited ? "default" : "outline"}
+                  onClick={toggleVisit}
+                >
+                  {isVisited ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLogVisitDialogOpen(true);
+                  }}
+                >
+                  <Calendar className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
-          {isAuthenticated && (
-            <Button
-              size="sm"
-              variant={isVisited ? "default" : "outline"}
-              onClick={toggleVisit}
-              className="shrink-0"
-            >
-              {isVisited ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-            </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
+            <span className="line-clamp-2">{restaurant.address}</span>
+          </div>
+          {restaurant.priceLevel && (
+            <div className="mt-2 text-sm text-accent">
+              {"$".repeat(restaurant.priceLevel)}
+            </div>
           )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-start gap-2 text-sm text-muted-foreground">
-          <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
-          <span className="line-clamp-2">{restaurant.address}</span>
-        </div>
-        {restaurant.priceLevel && (
-          <div className="mt-2 text-sm text-accent">
-            {"$".repeat(restaurant.priceLevel)}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+      {isAuthenticated && (
+        <LogVisitDialog
+          restaurantId={restaurant.id}
+          restaurantName={restaurant.name}
+          open={logVisitDialogOpen}
+          onClose={() => setLogVisitDialogOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -346,6 +371,288 @@ function RestaurantDetailDialog({ restaurantId, onClose }: { restaurantId: numbe
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LogVisitDialog({ restaurantId, restaurantName, open, onClose }: { restaurantId: number; restaurantName: string; open: boolean; onClose: () => void }) {
+  const { isAuthenticated, user } = useAuth();
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("nogroup");
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<number[]>([]);
+  const [visitDate, setVisitDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [notes, setNotes] = useState<string>("");
+
+  const { data: myGroups } = trpc.groups.myGroups.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: groupMembers } = trpc.groups.getMembers.useQuery(
+    { groupId: Number(selectedGroupId) },
+    { enabled: isAuthenticated && open && selectedGroupId !== "" && selectedGroupId !== "none" && selectedGroupId !== "nogroup" }
+  );
+  const { data: existingVisit } = trpc.visits.checkVisit.useQuery(
+    { restaurantId }, 
+    { 
+      enabled: isAuthenticated && open,
+      retry: false,
+    }
+  );
+  
+  const utils = trpc.useUtils();
+  const createOrUpdateMutation = trpc.visits.createOrUpdate.useMutation({
+    onSuccess: () => {
+      utils.visits.myVisits.invalidate();
+      utils.visits.checkVisit.invalidate({ restaurantId });
+      toast.success(existingVisit ? "Visit updated!" : "Visit logged!");
+      onClose();
+      // Reset form
+      setSelectedGroupId("nogroup");
+      setSelectedParticipantIds([]);
+      setVisitDate(new Date().toISOString().split('T')[0]);
+      setNotes("");
+    },
+  });
+
+  const deleteMutation = trpc.visits.delete.useMutation({
+    onSuccess: () => {
+      utils.visits.myVisits.invalidate();
+      utils.visits.checkVisit.invalidate({ restaurantId });
+      toast.success("Visit deleted!");
+      onClose();
+      // Reset form
+      setSelectedGroupId("nogroup");
+      setSelectedParticipantIds([]);
+      setVisitDate(new Date().toISOString().split('T')[0]);
+      setNotes("");
+    },
+  });
+
+  // Load existing visit data when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    
+    if (existingVisit) {
+      setVisitDate(new Date(existingVisit.visitedAt).toISOString().split('T')[0]);
+      setNotes(existingVisit.notes || "");
+      if (existingVisit.groupId) {
+        setSelectedGroupId(existingVisit.groupId.toString());
+      }
+      // Load existing participants
+      if (existingVisit.participants && existingVisit.participants.length > 0) {
+        setSelectedParticipantIds(existingVisit.participants);
+      } else if (user?.id) {
+        // Fallback to current user if no participants found
+        setSelectedParticipantIds([user.id]);
+      }
+    } else {
+      // Reset to defaults for new visit
+      setVisitDate(new Date().toISOString().split('T')[0]);
+      setNotes("");
+      setSelectedGroupId("nogroup");
+      // Include current user by default
+      if (user?.id) {
+        setSelectedParticipantIds([user.id]);
+      } else {
+        setSelectedParticipantIds([]);
+      }
+    }
+  }, [open, existingVisit, user]);
+
+  // Reset participants when group changes (but not when loading existing visit)
+  useEffect(() => {
+    // Don't reset if we're loading an existing visit
+    if (existingVisit) return;
+    
+    if (selectedGroupId === "" || selectedGroupId === "none" || selectedGroupId === "nogroup") {
+      // If no group selected, just include current user
+      if (user?.id) {
+        setSelectedParticipantIds([user.id]);
+      } else {
+        setSelectedParticipantIds([]);
+      }
+    } else if (groupMembers && user?.id) {
+      // When a group is selected, include current user by default if they're in the group
+      const currentUserInGroup = groupMembers.some((m: any) => m.user?.id === user.id);
+      if (currentUserInGroup) {
+        setSelectedParticipantIds([user.id]);
+      } else {
+        setSelectedParticipantIds([]);
+      }
+    }
+  }, [selectedGroupId, groupMembers, user, existingVisit]);
+
+  const handleSubmit = () => {
+    const visitedAtDate = new Date(visitDate);
+    if (isNaN(visitedAtDate.getTime())) {
+      toast.error("Please select a valid date");
+      return;
+    }
+
+    if (selectedParticipantIds.length === 0) {
+      toast.error("Please select at least one participant");
+      return;
+    }
+
+    createOrUpdateMutation.mutate({
+      restaurantId,
+      visitedAt: visitedAtDate,
+      notes: notes.trim() || undefined,
+      groupId: selectedGroupId && selectedGroupId !== "none" && selectedGroupId !== "nogroup" ? Number(selectedGroupId) : undefined,
+      participantIds: selectedParticipantIds,
+    });
+  };
+
+  const handleDelete = () => {
+    if (!existingVisit) return;
+    if (!confirm("Are you sure you want to delete this visit?")) return;
+    
+    deleteMutation.mutate({ restaurantId });
+  };
+
+  const toggleParticipant = (userId: number) => {
+    setSelectedParticipantIds(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  if (!isAuthenticated) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md bg-card">
+        <DialogHeader>
+          <DialogTitle className="text-2xl neon-pink">
+            {existingVisit ? "Edit Visit" : "Log Visit"}
+          </DialogTitle>
+          <DialogDescription>
+            Log a visit to <strong>{restaurantName}</strong> for one of your groups
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 mt-4">
+          <div>
+            <Label htmlFor="group">Group (optional)</Label>
+            <Select value={selectedGroupId || undefined} onValueChange={(value) => setSelectedGroupId(value || "nogroup")}>
+              <SelectTrigger id="group" className="bg-background">
+                <SelectValue placeholder="Select a group (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nogroup">No group</SelectItem>
+                {myGroups && myGroups.length > 0 ? (
+                  myGroups.map((group: any) => (
+                    <SelectItem key={group.group.id} value={group.group.id.toString()}>
+                      {group.group.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="none" disabled>
+                    No groups available
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {selectedGroupId && selectedGroupId !== "none" && selectedGroupId !== "nogroup" 
+                ? "Select which group members joined this visit."
+                : "Select a group to track which members joined this visit."}
+            </p>
+          </div>
+
+          {selectedGroupId && selectedGroupId !== "none" && selectedGroupId !== "nogroup" && groupMembers && (
+            <div>
+              <Label>Participants</Label>
+              <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto p-3 bg-muted/20 rounded-lg border border-border">
+                {groupMembers.length > 0 ? (
+                  groupMembers.map((member: any) => {
+                    const memberUserId = member.user?.id;
+                    if (!memberUserId) return null;
+                    const isSelected = selectedParticipantIds.includes(memberUserId);
+                    return (
+                      <div
+                        key={memberUserId}
+                        className="flex items-center gap-2 p-2 rounded hover:bg-muted/40 cursor-pointer"
+                        onClick={() => toggleParticipant(memberUserId)}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleParticipant(memberUserId)}
+                        />
+                        <span className="text-sm flex-1">
+                          {member.user?.name || "Unknown User"}
+                          {memberUserId === user?.id && (
+                            <span className="text-xs text-muted-foreground ml-2">(You)</span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-muted-foreground">No members found in this group.</p>
+                )}
+              </div>
+              {selectedParticipantIds.length === 0 && (
+                <p className="text-xs text-destructive mt-1">Please select at least one participant.</p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="visitDate">Visit Date</Label>
+            <Input
+              id="visitDate"
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              className="bg-background"
+              max={new Date().toISOString().split('T')[0]}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="notes">Notes (optional)</Label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add any notes about your visit..."
+              className="bg-background min-h-[100px]"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              onClick={handleSubmit}
+              disabled={createOrUpdateMutation.isPending}
+              className="flex-1"
+            >
+              {createOrUpdateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : existingVisit ? (
+                "Update Visit"
+              ) : (
+                "Log Visit"
+              )}
+            </Button>
+            {existingVisit && (
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -7,17 +7,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2, MapPin, Star, Users, ExternalLink } from "lucide-react";
 import { Country } from "../../../drizzle/schema";
 import { Link } from "wouter";
+import { useCountries, type CountryWithDisplay } from "@/hooks/useCountries";
 
 export default function Home() {
-  const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<CountryWithDisplay | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
-  const { data: countries, isLoading } = trpc.countries.list.useQuery();
+  const { data: countries, isLoading } = useCountries();
   const { data: restaurants, refetch: refetchRestaurants } = trpc.restaurants.getByCountry.useQuery(
     { countryId: selectedCountry?.id || 0 },
     { enabled: !!selectedCountry }
   );
 
-  const handleCountrySelected = (country: Country) => {
+  const handleCountrySelected = (country: CountryWithDisplay) => {
     setSelectedCountry(country);
     setIsSpinning(false);
     refetchRestaurants();

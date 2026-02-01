@@ -6,12 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Loader2, MapPin, Star, Users, Trophy } from "lucide-react";
 import { Link } from "wouter";
+import { useCountries } from "@/hooks/useCountries";
 
 export default function Profile() {
   const { user, isAuthenticated, loading } = useAuth();
   const { data: myVisits, isLoading: visitsLoading } = trpc.visits.myVisits.useQuery(undefined, { enabled: isAuthenticated });
   const { data: myGroups, isLoading: groupsLoading } = trpc.groups.myGroups.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: countries } = trpc.countries.list.useQuery();
+  const { data: countries } = useCountries();
   const { data: restaurants } = trpc.restaurants.list.useQuery();
 
   if (loading || visitsLoading || groupsLoading) {

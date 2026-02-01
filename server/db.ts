@@ -1,7 +1,7 @@
 import { eq, and, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
-import { InsertUser, users, countries, restaurants, visits, reviews, groups, groupMembers, InsertCountry, InsertRestaurant, InsertVisit, InsertReview, InsertGroup, InsertGroupMember } from "../drizzle/schema";
+import { InsertUser, users, countries, restaurants, visits, reviews, groups, groupMembers, visitParticipants, InsertCountry, InsertRestaurant, InsertVisit, InsertReview, InsertGroup, InsertGroupMember, InsertVisitParticipant } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -175,7 +175,15 @@ export async function searchRestaurants(query: string) {
 export async function getUserVisits(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(visits).where(eq(visits.userId, userId));
+  // Get visits where user is a participant
+  const result = await db.select({
+    visit: visits,
+  })
+    .from(visits)
+    .innerJoin(visitParticipants, eq(visits.id, visitParticipants.visitId))
+    .where(eq(visitParticipants.userId, userId));
+  // Return just the visits
+  return result.map(r => r.visit);
 }
 
 export async function getRestaurantVisits(restaurantId: number) {
@@ -186,35 +194,124 @@ export async function getRestaurantVisits(restaurantId: number) {
 
 export async function checkUserVisit(userId: number, restaurantId: number) {
   const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(visits).where(
-    and(
-      eq(visits.userId, userId),
-      eq(visits.restaurantId, restaurantId)
+  if (!db) return null;
+  // Check if user is a participant in any visit for this restaurant
+  const result = await db.select({
+    visit: visits,
+  })
+    .from(visits)
+    .innerJoin(visitParticipants, eq(visits.id, visitParticipants.visitId))
+    .where(
+      and(
+        eq(visitParticipants.userId, userId),
+        eq(visits.restaurantId, restaurantId)
+      )
     )
-  ).limit(1);
-  return result[0];
+    .limit(1);
+  return result[0]?.visit || null;
 }
 
-export async function markVisited(userId: number, restaurantId: number) {
+export async function getVisitParticipants(visitId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select({
+    participant: visitParticipants,
+    user: users,
+  })
+    .from(visitParticipants)
+    .leftJoin(users, eq(visitParticipants.userId, users.id))
+    .where(eq(visitParticipants.visitId, visitId));
+}
+
+export async function createVisit(data: {
+  restaurantId: number;
+  groupId?: number;
+  visitedAt?: Date;
+  notes?: string;
+  participantIds: number[];
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return await db.insert(visits).values({
-    userId,
+  
+  // Create the visit and return the inserted row
+  const visitResult = await db.insert(visits).values({
+    restaurantId: data.restaurantId,
+    groupId: data.groupId || null,
+    visitedAt: data.visitedAt || new Date(),
+    notes: data.notes || null,
+  }).returning({ id: visits.id });
+  
+  const visitId = visitResult[0]?.id;
+  
+  if (!visitId) {
+    throw new Error("Failed to create visit: no ID returned");
+  }
+  
+  // Add participants
+  if (data.participantIds.length > 0) {
+    await db.insert(visitParticipants).values(
+      data.participantIds.map(userId => ({
+        visitId: visitId,
+        userId,
+      }))
+    );
+  }
+  
+  return { insertId: visitId };
+}
+
+export async function updateVisit(visitId: number, data: {
+  visitedAt?: Date;
+  notes?: string;
+  groupId?: number;
+  participantIds?: number[];
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updateData: any = {};
+  if (data.visitedAt !== undefined) updateData.visitedAt = data.visitedAt;
+  if (data.notes !== undefined) updateData.notes = data.notes;
+  if (data.groupId !== undefined) updateData.groupId = data.groupId || null;
+  
+  await db.update(visits).set(updateData).where(eq(visits.id, visitId));
+  
+  // Update participants if provided
+  if (data.participantIds !== undefined) {
+    // Delete existing participants
+    await db.delete(visitParticipants).where(eq(visitParticipants.visitId, visitId));
+    
+    // Add new participants
+    if (data.participantIds.length > 0) {
+      await db.insert(visitParticipants).values(
+        data.participantIds.map(userId => ({
+          visitId,
+          userId,
+        }))
+      );
+    }
+  }
+}
+
+export async function deleteVisit(visitId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Delete participants first (foreign key constraint)
+  await db.delete(visitParticipants).where(eq(visitParticipants.visitId, visitId));
+  
+  // Delete the visit
+  return await db.delete(visits).where(eq(visits.id, visitId));
+}
+
+// Legacy function for backward compatibility
+export async function markVisited(userId: number, restaurantId: number, visitedAt?: Date, notes?: string) {
+  return await createVisit({
     restaurantId,
-    visitedAt: new Date(),
+    visitedAt,
+    notes,
+    participantIds: [userId],
   });
-}
-
-export async function deleteVisit(userId: number, restaurantId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  return await db.delete(visits).where(
-    and(
-      eq(visits.userId, userId),
-      eq(visits.restaurantId, restaurantId)
-    )
-  );
 }
 
 // ===== REVIEW OPERATIONS =====
@@ -318,10 +415,12 @@ export async function getUserGroups(userId: number) {
 export async function createGroup(group: InsertGroup) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(groups).values(group);
-  // Return insertId as number
-  const insertId = (result as any)[0]?.insertId || (result as any).insertId;
-  return { insertId: Number(insertId) };
+  const result = await db.insert(groups).values(group).returning({ id: groups.id });
+  const insertId = result[0]?.id;
+  if (!insertId) {
+    throw new Error("Failed to create group: no ID returned");
+  }
+  return { insertId };
 }
 
 export async function getGroupMembers(groupId: number) {

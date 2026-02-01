@@ -19,12 +19,12 @@ type MapsConfig = {
 };
 
 function getMapsConfig(): MapsConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
+  const baseUrl = ENV.GOOGLE_PLACE_URL;
+  const apiKey = ENV.GOOGLE_PLACE_API_KEY;
 
   if (!baseUrl || !apiKey) {
     throw new Error(
-      "Google Maps proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+      "Google Maps proxy credentials missing: set GOOGLE_PLACE_URL and GOOGLE_PLACE_API_KEY"
     );
   }
 
@@ -59,7 +59,8 @@ export async function makeRequest<T = unknown>(
   const { baseUrl, apiKey } = getMapsConfig();
 
   // Construct full URL: baseUrl + /v1/maps/proxy + endpoint
-  const url = new URL(`${baseUrl}/v1/maps/proxy${endpoint}`);
+  console.log("baseUrl", baseUrl);
+  const url = new URL(`${baseUrl}${endpoint}`);
 
   // Add API key as query parameter (standard Google Maps API authentication)
   url.searchParams.append("key", apiKey);
@@ -70,7 +71,7 @@ export async function makeRequest<T = unknown>(
       url.searchParams.append(key, String(value));
     }
   });
-
+  console.log("Calling url", url.toString());
   const response = await fetch(url.toString(), {
     method: options.method || "GET",
     headers: {
@@ -187,14 +188,17 @@ export type PlaceDetailsResult = {
     formatted_phone_number?: string;
     international_phone_number?: string;
     website?: string;
+    price_level?: number;
     rating?: number;
     user_ratings_total?: number;
+    editorial_summary?: { overview?: string };
     reviews?: Array<{
       author_name: string;
       rating: number;
       text: string;
       time: number;
     }>;
+    photos?: Array<{ photo_reference: string }>;
     opening_hours?: {
       open_now: boolean;
       weekday_text: string[];
