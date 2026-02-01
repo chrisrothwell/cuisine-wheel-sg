@@ -9,14 +9,21 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { COOKIE_NAME } from '../shared/const';
 
 type Bindings = {
-  GOOGLE_PLACE_API_KEY?: string;
+  // Environment variables used by ENV
+  VITE_APP_ID?: string;
+  JWT_SECRET?: string;
+  DATABASE_URL?: string;
+  OAUTH_SERVER_URL?: string;
+  OWNER_OPEN_ID?: string;
+  NODE_ENV?: string;
   GOOGLE_PLACE_URL?: string;
+  GOOGLE_PLACE_API_KEY?: string;
+  // Additional bindings
   TURSO_DATABASE_URL?: string;
   TURSO_AUTH_TOKEN?: string;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
   GOOGLE_OAUTH_REDIRECT_URI?: string;
-  // Add other env vars as needed
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
