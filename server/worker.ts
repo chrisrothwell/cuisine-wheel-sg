@@ -8,6 +8,7 @@ import type { TrpcContext } from './_core/context';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { COOKIE_NAME } from '../shared/const';
 import * as db from './db';
+import { ENV } from './_core/env';
 
 type Bindings = {
   // Environment variables used by ENV
@@ -88,8 +89,8 @@ app.get('/api/place-photo', async (c) => {
     return c.text('Missing ref', 400);
   }
 
-  const apiKey = c.env.GOOGLE_PLACE_API_KEY;
-  const baseUrl = c.env.GOOGLE_PLACE_URL;
+  const apiKey = ENV.GOOGLE_PLACE_API_KEY;
+  const baseUrl = ENV.GOOGLE_PLACE_URL;
   
   if (!apiKey || !baseUrl) {
     return c.text('Place photo proxy not configured', 503);
@@ -140,8 +141,8 @@ app.get('/api/oauth/callback', async (c) => {
     return c.redirect('/?error=missing_code', 302);
   }
 
-  const clientId = c.env.VITE_OAUTH_CLIENT_ID;
-  const clientSecret = c.env.OAUTH_CLIENT_SECRET;
+  const clientId = ENV.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = ENV.GOOGLE_OAUTH_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     console.error('[OAuth] Missing required configuration:', {
