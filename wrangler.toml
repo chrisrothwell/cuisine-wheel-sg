@@ -11,4 +11,4 @@ NODE_ENV = "production"
 [observability]
 [observability.logs]
 enabled = false
-invocation_logs = true
+invocation_logs = false

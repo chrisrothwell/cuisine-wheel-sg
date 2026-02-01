@@ -146,6 +146,11 @@ app.get('/api/oauth/callback', async (c) => {
   const redirectUri = c.env.GOOGLE_OAUTH_REDIRECT_URI;
 
   if (!clientId || !clientSecret || !redirectUri) {
+    console.error('[OAuth] Missing required configuration:', {
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      hasRedirectUri: !!redirectUri,
+    });
     return c.redirect('/?error=oauth_not_configured', 302);
   }
 
