@@ -37,6 +37,37 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+// CORS middleware for API routes (required when using credentials: 'include')
+app.use('/api/*', async (c, next) => {
+  // Get origin from header, or construct from request URL for same-origin requests
+  let origin = c.req.header('origin');
+  if (!origin) {
+    // For same-origin requests, construct origin from request URL
+    const url = new URL(c.req.url);
+    origin = `${url.protocol}//${url.host}`;
+  }
+  
+  // Handle preflight OPTIONS requests
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
+  
+  await next();
+  
+  // Add CORS headers to response (required for credentials: 'include')
+  c.header('Access-Control-Allow-Origin', origin);
+  c.header('Access-Control-Allow-Credentials', 'true');
+});
+
 // Workers-compatible context creation
 async function createWorkerContext(
   opts: FetchCreateContextFnOptions
@@ -70,15 +101,7 @@ app.use(
   trpcServer({
     router: appRouter,
     createContext: createWorkerContext,
-    responseMeta() {
-      return {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-      };
-    },
+    // CORS headers are handled by middleware above
   })
 );
 
