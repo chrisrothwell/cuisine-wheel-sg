@@ -227,11 +227,14 @@ app.get('/api/oauth/callback', async (c) => {
       name: googleUser.name || googleUser.email || 'User',
     });
 
-    // Set session cookie
+    // Set session cookie with production-appropriate settings
+    // In production, use SameSite=None for cross-site OAuth flows
+    // In dev, use Lax (browsers reject SameSite=None without Secure on localhost)
+    const isProduction = ENV.isProduction;
     setCookie(c, COOKIE_NAME, sessionToken, {
       httpOnly: true,
       secure: true,
-      sameSite: 'Lax',
+      sameSite: isProduction ? 'None' : 'Lax',
       maxAge: 60 * 60 * 24 * 365, // 1 year (matches ONE_YEAR_MS)
       path: '/',
     });
