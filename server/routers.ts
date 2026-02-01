@@ -242,7 +242,10 @@ export const appRouter = router({
     unmarkVisited: protectedProcedure
       .input(z.object({ restaurantId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.deleteVisit(ctx.user.id, input.restaurantId);
+        const existing = await db.checkUserVisit(ctx.user.id, input.restaurantId);
+        if (existing) {
+          await db.deleteVisit(existing.id);
+        }
         return { success: true };
       }),
   }),

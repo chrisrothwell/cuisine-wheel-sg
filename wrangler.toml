@@ -1,5 +1,6 @@
 name = "cuisine-wheel-sg"
 compatibility_date = "2026-02-01"
+main = "dist/worker.js"
 
 [assets]
 directory = "./dist/public"
