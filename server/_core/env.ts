@@ -38,4 +38,10 @@ export const ENV = {
   get GOOGLE_PLACE_API_KEY() {
     return getEnvVar("GOOGLE_PLACE_API_KEY");
   },
+  get GOOGLE_OAUTH_CLIENT_ID() {
+    return getEnvVar("VITE_OAUTH_CLIENT_ID");
+  },
+  get GOOGLE_OAUTH_CLIENT_SECRET() {
+    return getEnvVar("OAUTH_CLIENT_SECRET");
+  },
 };
