@@ -153,3 +153,8 @@ app.get('*', async (c) => {
   // This route won't be hit for static files
   return c.notFound();
 });
+
+// Export the fetch handler for Cloudflare Workers
+export default {
+  fetch: app.fetch,
+};
