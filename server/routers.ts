@@ -9,7 +9,7 @@ import { resolveAndParseMapsUrl } from "./googleMapsHelper";
 import type { Country } from "../drizzle/schema";
 
 // Import countries data - static import should be bundled by esbuild
-import countriesDataRaw from "../../client/src/countries.json";
+import countriesDataRaw from "./data/countries.json";
 
 // Transform the JSON data to match the database schema
 // Using 'any' type to avoid esbuild issues with kebab-case property names
