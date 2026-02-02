@@ -18,19 +18,117 @@ export default function MapPage() {
   const { data: countries } = useCountries();
   const { data: allRestaurants, isLoading } = trpc.restaurants.list.useQuery();
 
+  // Debug: Log countries and restaurants data
+  useEffect(() => {
+    if (countries) {
+      console.log('[MapPage] Countries loaded:', countries.map(c => ({ id: c.id, name: c.cuisineType, alpha2: c.alpha2 })));
+      // Find Jamaica and Mexico specifically
+      const jamaica = countries.find(c => c.cuisineType?.toLowerCase().includes('jamaica') || c.name?.toLowerCase().includes('jamaica'));
+      const mexico = countries.find(c => c.cuisineType?.toLowerCase().includes('mexico') || c.name?.toLowerCase().includes('mexico'));
+      console.log('[MapPage] Jamaica country:', jamaica);
+      console.log('[MapPage] Mexico country:', mexico);
+    }
+  }, [countries]);
+
+  useEffect(() => {
+    if (allRestaurants) {
+      console.log('[MapPage] Restaurants loaded:', allRestaurants.length, 'total');
+      // Log unique country IDs in restaurants
+      const uniqueCountryIds = Array.from(new Set(allRestaurants.map(r => r.country?.id ?? r.countryId)));
+      console.log('[MapPage] Unique country IDs in restaurants:', uniqueCountryIds);
+      // Log sample restaurants with their country data
+      console.log('[MapPage] Sample restaurants:', allRestaurants.slice(0, 3).map(r => ({
+        name: r.name,
+        countryId: r.countryId,
+        country: r.country,
+        countryIdFromCountry: r.country?.id
+      })));
+      // Log all restaurants with their country IDs
+      console.log('[MapPage] All restaurants with country IDs:', allRestaurants.map(r => ({
+        name: r.name,
+        countryId: r.countryId,
+        countryName: r.country?.name,
+        countryIdFromCountry: r.country?.id
+      })));
+    }
+  }, [allRestaurants]);
+
+  useEffect(() => {
+    console.log('[MapPage] Selected country ID changed:', selectedCountryId, typeof selectedCountryId);
+    if (selectedCountryId !== "all" && countries) {
+      const selectedCountry = countries.find(c => c.id.toString() === selectedCountryId);
+      console.log('[MapPage] Selected country object:', selectedCountry);
+    }
+  }, [selectedCountryId, countries]);
+
   // Filter restaurants
   const filteredRestaurants = allRestaurants?.filter((restaurant) => {
-    const matchesCountry = selectedCountryId === "all" || restaurant.countryId === Number(selectedCountryId);
+    if (selectedCountryId === "all") {
+      return restaurant.latitude && restaurant.longitude;
+    }
+    
+    const selectedCountryObj = countries?.find(c => c.id.toString() === selectedCountryId);
+    if (!selectedCountryObj || !selectedCountryObj.alpha2) {
+      return false;
+    }
+    
+    // Always match by alpha2 code since dropdown IDs (from JSON) don't match database IDs
+    const restaurantAlpha2 = restaurant.country?.alpha2;
+    const selectedAlpha2 = selectedCountryObj.alpha2;
+    const matchesCountry = !!(restaurantAlpha2 && selectedAlpha2 && restaurantAlpha2 === selectedAlpha2);
     const hasLocation = restaurant.latitude && restaurant.longitude;
+    
+    // Debug logging
+    if (selectedCountryId !== "all") {
+      console.log('[MapPage Filter]', {
+        restaurantName: restaurant.name,
+        selectedCountryName: selectedCountryObj?.cuisineType,
+        selectedCountryAlpha2: selectedCountryObj?.alpha2,
+        restaurantCountryName: restaurant.country?.name,
+        restaurantCountryAlpha2: restaurant.country?.alpha2,
+        matchesCountry,
+        hasLocation,
+        willInclude: matchesCountry && hasLocation
+      });
+    }
+    
     return matchesCountry && hasLocation;
   });
 
-  const getCountryName = (countryId: number) => {
-    return countries?.find(c => c.id === countryId)?.cuisineType || "Unknown";
+  // Helper function to convert country code to flag emoji
+  const getFlagEmoji = (alpha2: string | null | undefined): string => {
+    if (!alpha2 || alpha2.length !== 2) return "🏳️";
+    const codePoints = alpha2
+      .toUpperCase()
+      .split("")
+      .map((char) => 127397 + char.charCodeAt(0));
+    return String.fromCodePoint(...codePoints);
   };
 
-  const getCountryFlag = (countryId: number) => {
-    return countries?.find(c => c.id === countryId)?.flagEmoji || "🏳️";
+  const getCountryName = (restaurant: any) => {
+    // Restaurant includes country info from the join
+    if (restaurant.country?.name) {
+      return restaurant.country.name;
+    }
+    // Fallback: try to find in countries array (for backward compatibility)
+    const country = countries?.find(c => c.id === restaurant.countryId);
+    if (country) {
+      return country.cuisineType;
+    }
+    return "Unknown";
+  };
+
+  const getCountryFlag = (restaurant: any): string => {
+    // Get flag from country data in restaurant
+    if (restaurant.country?.alpha2) {
+      return getFlagEmoji(restaurant.country.alpha2);
+    }
+    // Fallback: try to find in countries array
+    const country = countries?.find(c => c.id === restaurant.countryId);
+    if (country?.alpha2) {
+      return getFlagEmoji(country.alpha2);
+    }
+    return "🏳️";
   };
 
   const handleMapReady = useCallback((googleMap: google.maps.Map) => {
@@ -87,7 +185,7 @@ export default function MapPage() {
       };
 
       // Get flag emoji for this restaurant's country
-      const flagEmoji = getCountryFlag(restaurant.countryId);
+      const flagEmoji = getCountryFlag(restaurant);
       const markerContent = createFlagMarkerContent(flagEmoji);
 
       const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -207,7 +305,7 @@ export default function MapPage() {
                     <CardTitle className="text-base">{restaurant.name}</CardTitle>
                     <CardDescription>
                       <Badge variant="secondary" className="text-xs">
-                        {getCountryName(restaurant.countryId)}
+                        {getCountryName(restaurant)}
                       </Badge>
                     </CardDescription>
                   </CardHeader>

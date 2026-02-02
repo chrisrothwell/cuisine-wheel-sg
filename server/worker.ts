@@ -25,6 +25,10 @@ type Bindings = {
   TURSO_AUTH_TOKEN?: string;
   VITE_OAUTH_CLIENT_ID?: string;
   OAUTH_CLIENT_SECRET?: string;
+  // Assets binding (automatically provided by Cloudflare Workers with [assets] config)
+  ASSETS?: {
+    fetch: (request: Request) => Promise<Response>;
+  };
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -281,11 +285,43 @@ app.use('*', async (c, next) => {
   }
 });
 
-// Fallback to serve static assets (handled by Workers Assets)
-// This is optional - Workers will serve assets automatically from the [assets] config
+// Fallback to serve index.html for client-side routes (SPA routing)
+// Static assets are served automatically by Cloudflare Workers from the [assets] config
+// API routes are handled above, so this catch-all only handles client-side routes
 app.get('*', async (c) => {
-  // Assets are served automatically by Cloudflare Workers
-  // This route won't be hit for static files
+  // For client-side routes, serve index.html to enable SPA routing
+  // The client-side router will handle the actual route
+  const url = new URL(c.req.url);
+  
+  // Skip API routes (shouldn't reach here, but just in case)
+  if (url.pathname.startsWith('/api/')) {
+    return c.notFound();
+  }
+  
+  // Construct a request for index.html
+  const indexUrl = new URL(c.req.url);
+  indexUrl.pathname = '/index.html';
+  const indexRequest = new Request(indexUrl.toString(), {
+    method: 'GET',
+    headers: c.req.raw.headers,
+  });
+  
+  // Use ASSETS binding if available (provided by Cloudflare Workers with [assets] config)
+  // Otherwise, fetch from the same origin (assets are served automatically)
+  let response: Response;
+  if (c.env.ASSETS) {
+    response = await c.env.ASSETS.fetch(indexRequest);
+  } else {
+    response = await fetch(indexRequest);
+  }
+  
+  if (response.ok) {
+    // Return the HTML with proper content type
+    const html = await response.text();
+    return c.html(html);
+  }
+  
+  // Fallback to 404 if index.html can't be found
   return c.notFound();
 });
 

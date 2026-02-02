@@ -116,6 +116,31 @@ export async function getCountryById(id: number) {
   return result[0];
 }
 
+export async function getCountryByCode(code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(countries).where(eq(countries.code, code)).limit(1);
+  return result[0];
+}
+
+export async function getCountryByAlpha2(alpha2: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(countries).where(eq(countries.alpha2, alpha2)).limit(1);
+  if (result[0]) {
+    console.log(`[getCountryByAlpha2] Found "${alpha2}":`, { id: result[0].id, code: result[0].code, alpha2: result[0].alpha2, name: result[0].name });
+  } else {
+    console.log(`[getCountryByAlpha2] Not found "${alpha2}"`);
+  }
+  return result[0];
+}
+
+// Helper to get country ID from code (for foreign key relationships)
+export async function getCountryIdByCode(code: string): Promise<number | undefined> {
+  const country = await getCountryByCode(code);
+  return country?.id;
+}
+
 export async function createCountry(country: InsertCountry) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -127,13 +152,28 @@ export async function createCountry(country: InsertCountry) {
 export async function getAllRestaurants() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(restaurants);
+  // Join with countries to get country information
+  return await db
+    .select({
+      restaurant: restaurants,
+      country: countries,
+    })
+    .from(restaurants)
+    .leftJoin(countries, eq(restaurants.countryId, countries.id));
 }
 
 export async function getRestaurantsByCountry(countryId: number) {
   const db = await getDb();
   if (!db) return [];
   return await db.select().from(restaurants).where(eq(restaurants.countryId, countryId));
+}
+
+export async function getRestaurantsByCountryCode(countryCode: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const country = await getCountryByCode(countryCode);
+  if (!country) return [];
+  return await db.select().from(restaurants).where(eq(restaurants.countryId, country.id));
 }
 
 export async function getRestaurantById(id: number) {
@@ -158,7 +198,42 @@ export async function getRestaurantByName(name: string, countryId: number) {
 export async function createRestaurant(restaurant: InsertRestaurant) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(restaurants).values(restaurant);
+  
+  // Validate that the country exists (foreign key constraint)
+  const country = await getCountryById(restaurant.countryId);
+  if (!country) {
+    throw new Error(`Country with ID ${restaurant.countryId} does not exist`);
+  }
+  
+  // Build insert object using the exact same pattern as createVisit (which works)
+  // Pass a plain object directly to .values() without type annotations
+  const insertValues: any = {
+    countryId: restaurant.countryId,
+    name: restaurant.name,
+    address: restaurant.address,
+    latitude: restaurant.latitude,
+    longitude: restaurant.longitude,
+    isActive: restaurant.isActive ?? true,
+  };
+  
+  // Add optional fields only if they have values (matching createVisit pattern)
+  if (restaurant.placeId) insertValues.placeId = restaurant.placeId;
+  if (restaurant.phoneNumber) insertValues.phoneNumber = restaurant.phoneNumber;
+  if (restaurant.website) insertValues.website = restaurant.website;
+  if (restaurant.priceLevel !== undefined) insertValues.priceLevel = restaurant.priceLevel;
+  if (restaurant.imageUrl) insertValues.imageUrl = restaurant.imageUrl;
+  if (restaurant.description) insertValues.description = restaurant.description;
+  
+  // Explicitly ensure id, createdAt, updatedAt are NOT in the object
+  // This is critical - Drizzle should handle auto-increment, but we're being explicit
+  delete insertValues.id;
+  delete insertValues.createdAt;
+  delete insertValues.updatedAt;
+  
+  console.log('[createRestaurant] Inserting with keys:', Object.keys(insertValues));
+  console.log('[createRestaurant] Country exists:', !!country);
+  
+  const result = await db.insert(restaurants).values(insertValues);
   return result;
 }
 
@@ -450,10 +525,10 @@ export async function getGroupVisits(groupId: number) {
     user: users,
     restaurant: restaurants,
   }).from(visits)
-    .leftJoin(users, eq(visits.userId, users.id))
     .leftJoin(restaurants, eq(visits.restaurantId, restaurants.id))
-    .leftJoin(groupMembers, eq(visits.userId, groupMembers.userId))
-    .where(eq(groupMembers.groupId, groupId));
+    .leftJoin(visitParticipants, eq(visits.id, visitParticipants.visitId))
+    .leftJoin(users, eq(visitParticipants.userId, users.id))
+    .where(eq(visits.groupId, groupId));
 }
 
 export async function joinGroup(groupId: number, userId: number) {

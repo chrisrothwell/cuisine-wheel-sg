@@ -64,11 +64,27 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getCountryById(input.id);
       }),
+    
+    getByCode: publicProcedure
+      .input(z.object({ code: z.string() }))
+      .query(async ({ input }) => {
+        return await db.getCountryByCode(input.code);
+      }),
   }),
 
   restaurants: router({
     list: publicProcedure.query(async () => {
-      return await db.getAllRestaurants();
+      const results = await db.getAllRestaurants();
+      // Transform to include country info in restaurant object
+      return results.map((r) => ({
+        ...r.restaurant,
+        country: r.country ? {
+          id: r.country.id,
+          name: r.country.name,
+          alpha2: r.country.alpha2,
+          code: r.country.code,
+        } : null,
+      }));
     }),
     
     getById: publicProcedure
@@ -81,6 +97,12 @@ export const appRouter = router({
       .input(z.object({ countryId: z.number() }))
       .query(async ({ input }) => {
         return await db.getRestaurantsByCountry(input.countryId);
+      }),
+    
+    getByCountryCode: publicProcedure
+      .input(z.object({ countryCode: z.string() }))
+      .query(async ({ input }) => {
+        return await db.getRestaurantsByCountryCode(input.countryCode);
       }),
     
     search: publicProcedure
@@ -131,7 +153,7 @@ export const appRouter = router({
         address: z.string(),
         latitude: z.string(),
         longitude: z.string(),
-        countryId: z.number(),
+        countryId: z.number(), // This is the sequential ID from JSON, need to convert to DB ID
         placeId: z.string().optional(),
         phoneNumber: z.string().optional(),
         website: z.string().optional(),
@@ -140,8 +162,34 @@ export const appRouter = router({
         description: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Convert sequential JSON country ID to actual database country ID
+        // The input.countryId is the index+1 from the JSON, we need the actual DB ID
+        const jsonCountry = countriesData.find(c => c.id === input.countryId);
+        if (!jsonCountry) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Country with ID ${input.countryId} not found`,
+          });
+        }
+        
+        console.log('[importFromGoogleMaps] JSON country:', { id: jsonCountry.id, code: jsonCountry.code, alpha2: jsonCountry.alpha2, name: jsonCountry.name });
+        
+        // Look up the actual database country by alpha2 (2-letter code like "MX")
+        // code is numeric (e.g. 484), alpha2 is the 2-letter code
+        const dbCountry = await db.getCountryByAlpha2(jsonCountry.alpha2);
+        if (!dbCountry) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Country with alpha2 ${jsonCountry.alpha2} not found in database`,
+          });
+        }
+        
+        console.log('[importFromGoogleMaps] Found database country:', { id: dbCountry.id, code: dbCountry.code, alpha2: dbCountry.alpha2, name: dbCountry.name });
+        
+        const actualCountryId = dbCountry.id;
+        
         // Check if restaurant already exists
-        const existing = await db.getRestaurantByName(input.name, input.countryId);
+        const existing = await db.getRestaurantByName(input.name, actualCountryId);
         if (existing) {
           throw new TRPCError({
             code: "CONFLICT",
@@ -149,21 +197,28 @@ export const appRouter = router({
           });
         }
         
-        // Create new restaurant
-        const result = await db.createRestaurant({
+        // Create new restaurant with the actual database country ID
+        const restaurantData = {
           name: input.name,
           address: input.address,
           latitude: Number(input.latitude),
           longitude: Number(input.longitude),
-          countryId: input.countryId,
+          countryId: actualCountryId, // Use the actual database ID
           placeId: input.placeId,
           phoneNumber: input.phoneNumber,
           website: input.website,
           priceLevel: input.priceLevel,
           imageUrl: input.imageUrl,
           description: input.description,
-        });
+        };
         
+        console.log('[importFromGoogleMaps] JSON country ID:', input.countryId);
+        console.log('[importFromGoogleMaps] Database country ID:', actualCountryId);
+        console.log('[importFromGoogleMaps] Restaurant data being passed to createRestaurant:', JSON.stringify(restaurantData, null, 2));
+        
+        const result = await db.createRestaurant(restaurantData);
+        
+        console.log('[importFromGoogleMaps] createRestaurant returned:', result);
         return result;
       }),
   }),

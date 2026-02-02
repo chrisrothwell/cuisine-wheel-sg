@@ -219,6 +219,57 @@ async function getPlaceIdFromName(placeName: string): Promise<string | null> {
   }
 }
 
+/** Get Place ID from place name and location using Text Search API with location bias */
+async function getPlaceIdFromNameAndLocation(
+  placeName: string,
+  lat: number,
+  lng: number
+): Promise<string | null> {
+  try {
+    console.log(`Searching for "${placeName}" near ${lat},${lng}`);
+    const result = await makeRequest<PlacesSearchResult>(
+      "/maps/api/place/textsearch/json",
+      {
+        query: placeName,
+        location: `${lat},${lng}`,
+        radius: "500", // Search within 500m radius
+        type: "establishment",
+      }
+    );
+
+    if (result.status === "OK" && result.results?.length > 0) {
+      // Prefer exact name matches, then closest by distance
+      const normalizedName = placeName.toLowerCase();
+      const exactMatch = result.results.find((r) => 
+        r.name?.toLowerCase() === normalizedName
+      );
+      if (exactMatch?.place_id) {
+        console.log(`Found exact match: ${exactMatch.name}`);
+        return exactMatch.place_id;
+      }
+      
+      // Check for partial matches
+      const partialMatch = result.results.find((r) => 
+        r.name?.toLowerCase().includes(normalizedName) ||
+        normalizedName.includes(r.name?.toLowerCase() || "")
+      );
+      if (partialMatch?.place_id) {
+        console.log(`Found partial match: ${partialMatch.name}`);
+        return partialMatch.place_id;
+      }
+      
+      // Return the first result (should be closest due to location bias)
+      console.log(`Using closest result: ${result.results[0].name}`);
+      return result.results[0].place_id ?? null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Failed to find place by name and location:', error);
+    return null;
+  }
+}
+
 // ============================================================================
 // Place Details Fetching
 // ============================================================================
@@ -293,8 +344,25 @@ export async function resolveAndParseMapsUrl(url: string): Promise<GoogleMapsPla
   if (placeInfo.placeId) {
     // Already have Place ID
     placeId = placeInfo.placeId;
+  } else if (placeInfo.coordinates && placeInfo.placeName) {
+    // Prefer text search with name and location (more precise than nearby search)
+    console.log("Resolving Place ID from name and location...");
+    placeId = await getPlaceIdFromNameAndLocation(
+      placeInfo.placeName,
+      placeInfo.coordinates.lat,
+      placeInfo.coordinates.lng
+    );
+    // Fall back to nearby search if text search didn't work
+    if (!placeId) {
+      console.log("Text search failed, falling back to nearby search...");
+      placeId = await getPlaceIdFromCoordinates(
+        placeInfo.coordinates.lat,
+        placeInfo.coordinates.lng,
+        placeInfo.placeName
+      );
+    }
   } else if (placeInfo.coordinates) {
-    // Use coordinates to find Place ID
+    // Use coordinates to find Place ID (no name available)
     console.log("Resolving Place ID from coordinates...");
     placeId = await getPlaceIdFromCoordinates(
       placeInfo.coordinates.lat,
@@ -302,7 +370,7 @@ export async function resolveAndParseMapsUrl(url: string): Promise<GoogleMapsPla
       placeInfo.placeName
     );
   } else if (placeInfo.placeName) {
-    // Use place name to find Place ID
+    // Use place name to find Place ID (no coordinates available)
     console.log("Resolving Place ID from place name...");
     placeId = await getPlaceIdFromName(placeInfo.placeName);
   }

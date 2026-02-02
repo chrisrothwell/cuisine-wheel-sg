@@ -42,8 +42,40 @@ export default function Discover() {
     return myVisits?.some(visit => visit.restaurantId === restaurantId);
   };
 
-  const getCountryName = (countryId: number) => {
-    return countries?.find(c => c.id === countryId)?.cuisineType || "Unknown";
+  // Helper function to convert country code to flag emoji
+  const getFlagEmoji = (alpha2: string | null | undefined): string => {
+    if (!alpha2 || alpha2.length !== 2) return "🏳️";
+    const codePoints = alpha2
+      .toUpperCase()
+      .split("")
+      .map((char) => 127397 + char.charCodeAt(0));
+    return String.fromCodePoint(...codePoints);
+  };
+
+  const getCountryName = (restaurant: any) => {
+    // Restaurant now includes country info from the join
+    if (restaurant.country?.name) {
+      return restaurant.country.name;
+    }
+    // Fallback: try to find in countries array (for backward compatibility)
+    const country = countries?.find(c => c.id === restaurant.countryId);
+    if (country) {
+      return country.cuisineType;
+    }
+    return "Unknown";
+  };
+
+  const getCountryFlag = (restaurant: any): string => {
+    // Get flag from country data in restaurant
+    if (restaurant.country?.alpha2) {
+      return getFlagEmoji(restaurant.country.alpha2);
+    }
+    // Fallback: try to find in countries array
+    const country = countries?.find(c => c.id === restaurant.countryId);
+    if (country?.alpha2) {
+      return getFlagEmoji(country.alpha2);
+    }
+    return "🏳️";
   };
 
   if (isLoading) {
@@ -101,7 +133,8 @@ export default function Discover() {
               <RestaurantCard
                 key={restaurant.id}
                 restaurant={restaurant}
-                countryName={getCountryName(restaurant.countryId)}
+                countryName={getCountryName(restaurant)}
+                countryFlag={getCountryFlag(restaurant)}
                 isVisited={isVisited(restaurant.id)}
                 isAuthenticated={isAuthenticated}
                 onSelect={() => setSelectedRestaurantId(restaurant.id)}
@@ -133,7 +166,7 @@ export default function Discover() {
   );
 }
 
-function RestaurantCard({ restaurant, countryName, isVisited, isAuthenticated, onSelect }: any) {
+function RestaurantCard({ restaurant, countryName, countryFlag, isVisited, isAuthenticated, onSelect }: any) {
   const [logVisitDialogOpen, setLogVisitDialogOpen] = useState(false);
   const utils = trpc.useUtils();
   const markVisitedMutation = trpc.visits.markVisited.useMutation({
@@ -178,7 +211,7 @@ function RestaurantCard({ restaurant, countryName, isVisited, isAuthenticated, o
               </CardTitle>
               <CardDescription className="mt-1">
                 <Badge variant="secondary" className="text-xs">
-                  {countryName}
+                  {countryFlag} {countryName}
                 </Badge>
               </CardDescription>
             </div>

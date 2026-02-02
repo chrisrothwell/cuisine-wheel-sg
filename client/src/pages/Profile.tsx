@@ -6,16 +6,79 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Loader2, MapPin, Star, Users, Trophy } from "lucide-react";
 import { Link } from "wouter";
-import { useCountries } from "@/hooks/useCountries";
+import { useCountries, type CountryWithDisplay } from "@/hooks/useCountries";
+import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
+
+// Helper function to convert country code to flag emoji (same as in useCountries)
+function getFlagEmoji(alpha2: string | null | undefined): string {
+  if (!alpha2 || alpha2.length !== 2) return "🏳️";
+  const codePoints = alpha2
+    .toUpperCase()
+    .split("")
+    .map((char) => 127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
 
 export default function Profile() {
   const { user, isAuthenticated, loading } = useAuth();
   const { data: myVisits, isLoading: visitsLoading } = trpc.visits.myVisits.useQuery(undefined, { enabled: isAuthenticated });
   const { data: myGroups, isLoading: groupsLoading } = trpc.groups.myGroups.useQuery(undefined, { enabled: isAuthenticated });
   const { data: countries } = useCountries();
-  const { data: restaurants } = trpc.restaurants.list.useQuery();
-
-  if (loading || visitsLoading || groupsLoading) {
+  const { data: restaurants, isLoading: restaurantsLoading } = trpc.restaurants.list.useQuery();
+  
+  // Fetch missing countries from database for any countryIds not in the countries list
+  const countryIdsFromVisits = restaurants && myVisits ? Array.from(
+    new Set(
+      myVisits.map(visit => {
+        const restaurant = restaurants.find(r => Number(r.id) === Number(visit.restaurantId));
+        return restaurant ? Number(restaurant.countryId) : null;
+      }).filter((id): id is number => id !== null && !isNaN(id))
+    )
+  ) : [];
+  
+  const missingCountryIds = useMemo(() => 
+    countryIdsFromVisits.filter(
+      id => !countries?.some(c => Number(c.id) === Number(id))
+    ),
+    [countryIdsFromVisits, countries]
+  );
+  
+  // Get tRPC utils for fetching
+  const utils = trpc.useUtils();
+  
+  // Fetch all missing countries from database
+  const missingCountriesQueries = useQueries({
+    queries: missingCountryIds.map((id) => ({
+      queryKey: ['countries', 'getById', id] as const,
+      queryFn: async () => {
+        return await utils.countries.getById.fetch({ id });
+      },
+      enabled: isAuthenticated && id !== undefined && id > 0,
+    })),
+  });
+  
+  const missingCountries = useMemo(() => 
+    missingCountriesQueries
+      .map(query => query.data)
+      .filter((country): country is NonNullable<typeof country> => country !== undefined && country !== null),
+    [missingCountriesQueries]
+  );
+  
+  const missingCountriesLoading = missingCountriesQueries.some(query => query.isLoading);
+  
+  // Combine countries from list with missing countries from database
+  const allCountries: CountryWithDisplay[] = useMemo(() => {
+    if (!countries) return [];
+    const missingCountriesWithDisplay: CountryWithDisplay[] = missingCountries.map(country => ({
+      ...country,
+      cuisineType: country.name,
+      flagEmoji: getFlagEmoji(country.alpha2)
+    }));
+    return [...countries, ...missingCountriesWithDisplay];
+  }, [countries, missingCountries]);
+  
+  if (loading || visitsLoading || groupsLoading || restaurantsLoading || missingCountriesLoading) {
     return (
       <div className="container py-16 flex items-center justify-center min-h-[60vh]">
         <Loader2 className="w-12 h-12 animate-spin text-primary" />
@@ -41,31 +104,33 @@ export default function Profile() {
 
   // Calculate stats
   const visitedRestaurants = myVisits?.length || 0;
-  const uniqueCountries = new Set(
-    myVisits?.map(visit => {
-      const restaurant = restaurants?.find(r => r.id === visit.restaurantId);
-      return restaurant?.countryId;
-    }).filter(Boolean)
-  ).size;
-  const totalCountries = countries?.length || 0;
+  const uniqueCountries = (restaurants && myVisits) ? new Set(
+    myVisits.map(visit => {
+      const restaurant = restaurants.find(r => Number(r.id) === Number(visit.restaurantId));
+      return restaurant ? Number(restaurant.countryId) : null;
+    }).filter((countryId): countryId is number => countryId !== null && !isNaN(countryId))
+  ).size : 0;
+  const totalCountries = allCountries?.length || 0;
   const completionPercentage = totalCountries > 0 ? Math.round((uniqueCountries / totalCountries) * 100) : 0;
 
   // Get visited countries with details
-  const visitedCountriesDetails = Array.from(
+  // Only calculate if we have all required data
+  // Normalize IDs to numbers to handle any type mismatches
+  const visitedCountriesDetails = (restaurants && allCountries && myVisits) ? Array.from(
     new Set(
-      myVisits?.map(visit => {
-        const restaurant = restaurants?.find(r => r.id === visit.restaurantId);
-        return restaurant?.countryId;
-      }).filter(Boolean)
+      myVisits.map(visit => {
+        const restaurant = restaurants.find(r => Number(r.id) === Number(visit.restaurantId));
+        return restaurant ? Number(restaurant.countryId) : null;
+      }).filter((countryId): countryId is number => countryId !== null && !isNaN(countryId))
     )
   ).map(countryId => {
-    const country = countries?.find(c => c.id === countryId);
-    const countryVisits = myVisits?.filter(visit => {
-      const restaurant = restaurants?.find(r => r.id === visit.restaurantId);
-      return restaurant?.countryId === countryId;
-    }).length || 0;
+    const country = allCountries.find(c => Number(c.id) === Number(countryId));
+    const countryVisits = myVisits.filter(visit => {
+      const restaurant = restaurants.find(r => Number(r.id) === Number(visit.restaurantId));
+      return restaurant && Number(restaurant.countryId) === Number(countryId);
+    }).length;
     return { country, visits: countryVisits };
-  }).filter(item => item.country);
+  }).filter(item => item.country !== undefined) : [];
 
   return (
     <div className="container py-8">
@@ -123,8 +188,11 @@ export default function Profile() {
                 key={country!.id}
                 className="p-4 bg-muted/20 border border-border rounded-lg text-center hover:border-primary transition-colors"
               >
-                <div className="text-4xl mb-2">{country!.flagEmoji}</div>
+                <div className="text-4xl mb-2" role="img" aria-label={`${country!.name} flag`}>
+                  {country!.flagEmoji}
+                </div>
                 <div className="text-sm font-semibold">{country!.cuisineType}</div>
+                <div className="text-xs text-muted-foreground mt-1">{country!.name}</div>
                 <div className="text-xs text-muted-foreground mt-1">{visits} visits</div>
               </div>
             ))}
@@ -146,7 +214,7 @@ export default function Profile() {
           <div className="space-y-4">
             {myVisits.slice(0, 10).map((visit) => {
               const restaurant = restaurants?.find(r => r.id === visit.restaurantId);
-              const country = countries?.find(c => c.id === restaurant?.countryId);
+              const country = allCountries?.find(c => Number(c.id) === Number(restaurant?.countryId));
               return (
                 <div
                   key={visit.id}
