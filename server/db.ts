@@ -1,4 +1,4 @@
-import { eq, and, like } from "drizzle-orm";
+import { eq, and, like, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import { InsertUser, users, countries, restaurants, visits, reviews, groups, groupMembers, visitParticipants, InsertCountry, InsertRestaurant, InsertVisit, InsertReview, InsertGroup, InsertGroupMember, InsertVisitParticipant } from "../drizzle/schema";
@@ -463,11 +463,12 @@ export async function getAllPublicGroups() {
   return await db.select({
     group: groups,
     creator: users,
-    memberCount: groupMembers.id,
+    memberCount: count(groupMembers.id),
   }).from(groups)
     .leftJoin(users, eq(groups.creatorId, users.id))
     .leftJoin(groupMembers, eq(groups.id, groupMembers.groupId))
-    .where(eq(groups.isPublic, true));
+    .where(eq(groups.isPublic, true))
+    .groupBy(groups.id);
 }
 
 export async function getGroupById(id: number) {

@@ -146,7 +146,7 @@ function GroupCard({ group, creator, memberCount, membership, onSelect }: any) {
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Users className="w-4 h-4" />
-            <span>{memberCount} members</span>
+            <span>{memberCount} {memberCount === 1 ? "member" : "members"}</span>
           </div>
           {creator && (
             <span className="text-xs text-muted-foreground">
