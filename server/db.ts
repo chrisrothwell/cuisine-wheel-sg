@@ -7,11 +7,15 @@ import { ENV } from './_core/env';
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db) {
+    const url = ENV.databaseUrl;
+    if (!url) {
+      return null;
+    }
     try {
       const client = createClient({
-        url: process.env.DATABASE_URL,
-        authToken: process.env.DATABASE_AUTH_TOKEN, // Optional for local, required for Turso Cloud
+        url,
+        authToken: ENV.databaseAuthToken,
       });
       _db = drizzle(client);
     } catch (error) {

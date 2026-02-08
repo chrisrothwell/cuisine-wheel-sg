@@ -23,6 +23,9 @@ export const ENV = {
   get databaseUrl() {
     return getEnvVar("DATABASE_URL");
   },
+  get databaseAuthToken() {
+    return getEnvVar("DATABASE_AUTH_TOKEN");
+  },
   get oAuthServerUrl() {
     return getEnvVar("OAUTH_SERVER_URL");
   },
