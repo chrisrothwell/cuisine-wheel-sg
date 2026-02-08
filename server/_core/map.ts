@@ -19,12 +19,12 @@ type MapsConfig = {
 };
 
 function getMapsConfig(): MapsConfig {
-  const baseUrl = ENV.GOOGLE_PLACE_URL;
+  const baseUrl = ENV.GOOGLE_PLACE_URL || "https://maps.googleapis.com";
   const apiKey = ENV.GOOGLE_PLACE_API_KEY;
 
-  if (!baseUrl || !apiKey) {
+  if (!apiKey) {
     throw new Error(
-      "Google Maps proxy credentials missing: set GOOGLE_PLACE_URL and GOOGLE_PLACE_API_KEY"
+      "Google Maps API key missing: set GOOGLE_PLACE_API_KEY"
     );
   }
 

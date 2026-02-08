@@ -330,12 +330,13 @@ export async function resolveAndParseMapsUrl(url: string): Promise<GoogleMapsPla
   let fullUrl = url;
   if (isShortMapsUrl(url)) {
     fullUrl = await resolveShortUrl(url);
+    console.log("[resolveAndParseMapsUrl] Resolved short URL to:", fullUrl);
   }
 
   // Step 2: Extract place info from URL
   const placeInfo = extractPlaceInfoFromUrl(fullUrl);
   if (!placeInfo) {
-    throw new Error("Could not extract place information from URL. Make sure the link points to a specific place.");
+    throw new Error(`Could not extract place information from resolved URL: ${fullUrl}`);
   }
 
   // Step 3: Get Place ID
@@ -376,6 +377,7 @@ export async function resolveAndParseMapsUrl(url: string): Promise<GoogleMapsPla
   }
   
   if (!placeId) {
+    console.error("[resolveAndParseMapsUrl] Failed to resolve Place ID. Extracted info:", JSON.stringify(placeInfo));
     throw new Error("Could not resolve Place ID. The URL may not point to a specific place.");
   }
 

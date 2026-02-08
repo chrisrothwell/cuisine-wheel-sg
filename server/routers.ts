@@ -19,21 +19,19 @@ function transformCountriesData(data: any[]): Country[] {
     const alpha3 = item["alpha-3"] as string;
     const subRegion = item["sub-region"] as string | undefined;
     const region = item.region as string | undefined;
-    const unMember = item.un_member as boolean | undefined;
-    const unMembershipStatus = item.un_membership_status as string | undefined;
-    
+
     return {
       id: index + 1, // Generate sequential IDs
       name: item.name as string,
       code: alpha2, // Map alpha-2 to code
       alpha2: alpha2,
       alpha3: alpha3,
-      description: null, // Not available in JSON
+      description: null,
       region: region && region.trim() !== "" ? region : null,
       subRegion: subRegion && subRegion.trim() !== "" ? subRegion : null,
-      unMember: unMember ?? false,
-      unMembershipStatus: unMembershipStatus && unMembershipStatus.trim() !== "" ? unMembershipStatus : null,
-      createdAt: new Date(), // Use current date as default
+      unMember: true, // JSON only contains UN member states
+      unMembershipStatus: "Member",
+      createdAt: new Date(),
     };
   });
 }

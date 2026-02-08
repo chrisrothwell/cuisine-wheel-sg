@@ -279,8 +279,8 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
           }}
           className="w-full h-full"
         >
-          <Sphere stroke="#1e293b" strokeWidth={0.5} fill="transparent" id="sphere" />
-          <Graticule stroke="#1e293b" strokeWidth={0.5} />
+          <Sphere stroke="#064e3b" strokeWidth={0.5} fill="transparent" id="sphere" />
+          <Graticule stroke="#064e3b" strokeWidth={0.3} />
           
           <Geographies geography={geoUrl}>
             {({ geographies }) => {
@@ -310,8 +310,8 @@ export default function MapSelector({ countries, onCountrySelected, isSpinning }
                   <Geography
                     key={geo.rsmKey}
                     geography={geo}
-                    fill={isWinner ? "#ec4899" : isScanning ? "#6366f1" : "#0f172a"}
-                    stroke="#1e293b"
+                    fill={isWinner ? "#ec4899" : isScanning ? "#6366f1" : "#065f46"}
+                    stroke="#047857"
                     strokeWidth={0.5}
                     style={{
                       default: { outline: "none", transition: "fill 0.3s" },
