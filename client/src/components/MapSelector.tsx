@@ -12,7 +12,7 @@ import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { type Country } from "../../../drizzle/schema";
 import { type CountryWithDisplay } from "@/hooks/useCountries";
 
-const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/main/world.json";
+const geoUrl = "/world.json";
 const SG_COORDS: [number, number] = [103.8198, 1.3521];
 const INITIAL_MAP_CONFIG = { center: [103.8198, 1.3521] as [number, number], scale: 280 };
 
