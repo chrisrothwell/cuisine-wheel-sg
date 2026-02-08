@@ -8,6 +8,7 @@ binding = "ASSETS"
 
 [vars]
 NODE_ENV = "production"
+DATABASE_URL = "libsql://cuisine-wheel-chrisrothwell.aws-ap-northeast-1.turso.io"
 
 [observability]
 [observability.logs]
