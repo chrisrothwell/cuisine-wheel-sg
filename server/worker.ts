@@ -157,13 +157,6 @@ app.get('/api/place-photo', async (c) => {
 
 // OAuth callback
 app.get('/api/oauth/callback', async (c) => {
-  // Debug logging
-  console.log('[OAuth Debug] globalThis.process:', typeof (globalThis as any).process);
-  console.log('[OAuth Debug] globalThis.process.env:', typeof (globalThis as any).process?.env);
-  console.log('[OAuth Debug] c.env keys:', Object.keys(c.env));
-  console.log('[OAuth Debug] c.env.VITE_OAUTH_CLIENT_ID:', !!c.env.VITE_OAUTH_CLIENT_ID);
-  console.log('[OAuth Debug] c.env.OAUTH_CLIENT_SECRET:', !!c.env.OAUTH_CLIENT_SECRET);  
-  
   const code = c.req.query('code');
   const error = c.req.query('error');
 
@@ -175,18 +168,8 @@ app.get('/api/oauth/callback', async (c) => {
     return c.redirect('/?error=missing_code', 302);
   }
 
-  // Try reading directly from c.env first to verify secrets are there
-  console.log('[OAuth Debug] Direct c.env read - clientId:', !!c.env.VITE_OAUTH_CLIENT_ID);
-  console.log('[OAuth Debug] Direct c.env read - clientSecret:', !!c.env.OAUTH_CLIENT_SECRET);
-  
-  // Then try ENV
-  console.log('[OAuth Debug] ENV.GOOGLE_OAUTH_CLIENT_ID:', !!ENV.GOOGLE_OAUTH_CLIENT_ID);
-  console.log('[OAuth Debug] ENV.GOOGLE_OAUTH_CLIENT_SECRET:', !!ENV.GOOGLE_OAUTH_CLIENT_SECRET);
-  
   const clientId = ENV.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = ENV.GOOGLE_OAUTH_CLIENT_SECRET;
-
-  console.log('[OAuth Debug] Final values - clientId:', !!clientId, 'clientSecret:', !!clientSecret);
 
   if (!clientId || !clientSecret) {
     console.error('[OAuth] Missing required configuration:', {
@@ -254,15 +237,11 @@ app.get('/api/oauth/callback', async (c) => {
       name: googleUser.name || googleUser.email || 'User',
     });
 
-    // Set session cookie with production-appropriate settings
-    // In production, use SameSite=None for cross-site OAuth flows
-    // In dev, use Lax (browsers reject SameSite=None without Secure on localhost)
-    const isProduction = ENV.isProduction;
     setCookie(c, COOKIE_NAME, sessionToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: isProduction ? 'None' : 'Lax',
-      maxAge: 60 * 60 * 24 * 365, // 1 year (matches ONE_YEAR_MS)
+      secure: ENV.isProduction,
+      sameSite: 'Lax',
+      maxAge: 60 * 60 * 24 * 365,
       path: '/',
     });
 

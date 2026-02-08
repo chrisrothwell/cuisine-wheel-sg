@@ -4,6 +4,7 @@ main = "dist/worker.js"
 
 [assets]
 directory = "./dist/public"
+binding = "ASSETS"
 
 [vars]
 NODE_ENV = "production"
