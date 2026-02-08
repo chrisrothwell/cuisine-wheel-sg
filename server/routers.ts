@@ -1,5 +1,5 @@
 import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -46,9 +46,12 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      // Don't pass maxAge - clearCookie will expire immediately without it
-      ctx.res.clearCookie(COOKIE_NAME, cookieOptions);
+      ctx.res.clearCookie(COOKIE_NAME, {
+        httpOnly: true,
+        path: "/",
+        sameSite: "Lax",
+        secure: ENV.isProduction,
+      });
       return { success: true } as const;
     }),
   }),

@@ -8,8 +8,7 @@ Live: https://cuisine-wheel-sg.rothwell-chris.workers.dev/
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm run dev-hono` | Dev server (Cloudflare Workers via Wrangler) — builds first |
-| `pnpm run dev-win-express` | Dev server (Express, Windows-compatible) |
+| `pnpm run dev` | Dev server (Cloudflare Workers via Wrangler) — builds first |
 | `pnpm run build` | Full build: Vite (client) + esbuild (worker) |
 | `pnpm run build:worker` | Build worker only |
 | `pnpm run check` | TypeScript type checking (no emit) |
@@ -24,12 +23,12 @@ Package manager: **pnpm** (v10.4.1)
 
 ```
 client/          React 19 SPA (Vite, Tailwind, Shadcn UI)
-server/          Backend (dual runtime)
+server/          Backend (Hono on Cloudflare Workers)
   worker.ts        Cloudflare Workers entry (Hono)
-  _core/index.ts   Express entry (local dev)
   _core/trpc.ts    tRPC init, middleware, procedure types
-  _core/oauth.ts   Google OAuth flow
+  _core/context.ts tRPC context type
   _core/sdk.ts     JWT session management (jose)
+  _core/env.ts     Environment variable abstraction
   routers.ts       All tRPC procedure definitions
   db.ts            Database query helpers
 shared/          Shared types and constants
@@ -41,7 +40,7 @@ drizzle/         Schema and migrations
 ### Tech Stack
 
 - **Frontend**: React 19 + TypeScript, Vite, Wouter (routing), TanStack React Query, Framer Motion
-- **Backend**: tRPC 11 over Hono (prod) / Express (dev)
+- **Backend**: tRPC 11 over Hono (Cloudflare Workers)
 - **Database**: Turso (LibSQL/SQLite) via Drizzle ORM
 - **Auth**: Google OAuth -> JWT in HTTP-only cookies
 - **Deployment**: Cloudflare Workers
@@ -50,7 +49,7 @@ drizzle/         Schema and migrations
 
 ### Key Design Decisions
 
-- **Dual runtime**: Hono serves production on Cloudflare Workers; Express is used for local development. Environment variables are abstracted through `server/_core/env.ts`.
+- **Single runtime**: Hono on Cloudflare Workers for both dev (`wrangler dev`) and production. Environment variables are abstracted through `server/_core/env.ts`.
 - **tRPC procedures** use three auth levels: `publicProcedure`, `protectedProcedure` (logged-in user), and `adminProcedure`.
 - **Country data** comes from a static `countries.json` file, loaded into the DB. Country IDs in the DB may differ from JSON array indices — always use DB IDs for foreign keys.
 - **Client path aliases**: `@/*` maps to `client/src/*`, `@shared/*` maps to `shared/*`.
@@ -88,14 +87,14 @@ Secrets are set via `npx wrangler secret put <KEY>`. Config in `wrangler.toml`.
 
 - **Assets binding**: `wrangler.toml` must have `binding = "ASSETS"` under `[assets]` so the worker can serve `index.html` for SPA routes. Without it, `c.env.ASSETS` is undefined and the SPA catch-all fails.
 - **SPA routing**: The catch-all in `worker.ts` serves `index.html` via `c.env.ASSETS.fetch()` for any non-API path. This is required for client-side routing (Wouter) to work on direct navigation/refresh.
-- **Secrets**: All env vars used by the worker must be set via `npx wrangler secret put <KEY>`. Currently set: `DATABASE_AUTH_TOKEN`, `GOOGLE_PLACE_API_KEY`, `JWT_SECRET`, `OAUTH_CLIENT_SECRET`, `VITE_OAUTH_CLIENT_ID`. Vars in `wrangler.toml`: `NODE_ENV`.
+- **Vars vs secrets**: Vars set via the Cloudflare dashboard are **overwritten on every deploy** by `wrangler.toml`. Non-sensitive config must go in `wrangler.toml` `[vars]`. Actual secrets should be set via `npx wrangler secret put <KEY>` (these survive deploys). Currently: vars in toml = `NODE_ENV`, `DATABASE_URL`; secrets = `DATABASE_AUTH_TOKEN`, `GOOGLE_PLACE_API_KEY`, `JWT_SECRET`, `OAUTH_CLIENT_SECRET`, `VITE_OAUTH_CLIENT_ID`.
+- **ENV abstraction**: Always use `ENV.*` getters from `server/_core/env.ts` instead of `process.env` directly. The env middleware bridges Workers bindings to `globalThis.process.env`, but direct `process.env` access can miss Workers bindings.
 - **Cookie settings**: Use `SameSite=Lax` for same-site OAuth flow. `SameSite=None` is unnecessary and can cause issues with third-party cookie blocking.
-- **OpenID format**: Worker OAuth uses `google_${googleUser.id}` as `openId`, while Express OAuth uses `userInfo.sub` directly. These are different — users created in one environment won't resolve in the other.
+- **OpenID format**: OAuth uses `google_${googleUser.id}` as `openId`.
 
 ## Known Issues / Gotchas
 
 - Country ID mismatch: JSON array indices don't match DB auto-increment IDs. Always resolve via DB lookup, not array index.
-- Windows dev: Use `dev-win-express` (uses cross-env) instead of `dev-express`.
 - The `nul` file in repo root is a Windows artifact — safe to delete.
 - Pre-existing TS errors in `llm.ts`, `voiceTranscription.ts`, `storage.ts` — these reference `ENV.forgeApiUrl`/`ENV.forgeApiKey` which don't exist (Manus platform leftovers).
 - Pre-existing test failures: auth logout test expects wrong cookie options, countries tests expect removed properties (`cuisineType`, `flagEmoji`), groups tests need a DB connection.
