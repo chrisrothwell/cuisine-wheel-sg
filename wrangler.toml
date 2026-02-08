@@ -11,6 +11,7 @@ NODE_ENV = "production"
 DATABASE_URL = "libsql://cuisine-wheel-chrisrothwell.aws-ap-northeast-1.turso.io"
 VITE_ANALYTICS_ENDPOINT = "https://cloud.umami.is/script.js"
 VITE_ANALYTICS_WEBSITE_ID = "de6fb048-e0e2-4afa-a14d-4d5388a113bf"
+GOOGLE_PLACE_URL = "https://maps.googleapis.com"
 
 [observability]
 [observability.logs]
