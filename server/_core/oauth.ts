@@ -79,7 +79,7 @@ export function registerOAuthRoutes(app: Express) {
 
       // Fetch user info from Google
       const userInfoResponse = await fetch(
-        "https://openidconnect.googleapis.com/v1/userinfo",
+        "https://www.googleapis.com/oauth2/v2/userinfo",
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -99,30 +99,31 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      const userInfo = (await userInfoResponse.json()) as {
-        sub?: string;
+      const googleUser = (await userInfoResponse.json()) as {
+        id?: string;
         name?: string;
         email?: string;
         picture?: string;
       };
 
-      if (!userInfo.sub) {
-        res.status(400).json({ error: "sub missing from Google user info" });
+      if (!googleUser.id) {
+        res.status(400).json({ error: "id missing from Google user info" });
         return;
       }
 
+      const openId = `google_${googleUser.id}`;
       const now = new Date();
-      const displayName = userInfo.name || userInfo.email || "";
+      const displayName = googleUser.name || googleUser.email || "";
 
       await db.upsertUser({
-        openId: userInfo.sub,
-        name: userInfo.name || null,
-        email: userInfo.email ?? null,
+        openId,
+        name: googleUser.name || null,
+        email: googleUser.email ?? null,
         loginMethod: "google",
         lastSignedIn: now,
       });
 
-      const sessionToken = await sdk.createSessionToken(userInfo.sub, {
+      const sessionToken = await sdk.createSessionToken(openId, {
         name: displayName,
         expiresInMs: ONE_YEAR_MS,
       });
